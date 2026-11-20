@@ -21,12 +21,17 @@
  * the middle. On lift the best goes in, a space before it when it follows
  * another word; tapping one of the others swaps it in, and backspace takes
  * the whole word out.
+ *
+ * The microphone at the strip's end dictates, as FUTO's voice input does: a
+ * circle in place of the keys swells with the voice, and a tap or 2 s of
+ * quiet after speech ends it; then what was said goes in (see VoiceInput).
  */
 #ifndef KEYBOARD_H
 #define KEYBOARD_H
 
 #include "EmojiPanel.h"
 #include "SwipeDecoder.h"
+#include "VoiceInput.h"
 
 #include <String.h>
 
@@ -87,6 +92,11 @@ private:
 			void				_DrawSuggestions(BView* view);
 			void				_DrawTrail(BView* view);
 			BRect				_TrailBounds() const;
+			BRect				_MicFrame() const;
+			void				_StartVoice();
+			void				_StopVoice();
+			void				_DrawVoice(BView* view);
+	static	status_t			_Transcribe(void* data);
 			int32				_KeyAt(BPoint where) const;
 			bool				_IsOn(const Key& key) const;
 
@@ -126,6 +136,16 @@ private:
 
 			BBitmap*			fBuffer;
 			BView*				fBufferView;
+
+			enum VoiceState { kVoiceOff, kListening, kTranscribing,
+				kVoiceFailed };
+			VoiceInput			fVoice;
+			bool				fVoiceAvailable;
+			VoiceState			fVoiceState;
+			bool				fMicPressed;
+			float				fShownMagnitude;	// eased, as FUTO's
+			BMessageRunner*		fVoiceRunner;
+			thread_id			fVoiceThread;
 };
 
 

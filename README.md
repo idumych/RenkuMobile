@@ -48,7 +48,7 @@ for 720×1440.
 | Action drawer | `shell/src/ActionDrawer.cpp` | Date and time, quick settings (Network, Keyboard, Screenshot, Settings). |
 | Task switcher | `shell/src/TaskSwitcher.cpp` | A card per open window: tap to switch, ✕ to close. |
 | Window management | `shell/src/WindowTracker.cpp` | Makes every app window borderless and full-screen between the panels (and above the keyboard). |
-| On-screen keyboard | `shell/src/Keyboard.cpp`, `vkbd/` | Letters and symbols; types through an input_server add-on, so any app gets the keys. Comes up when a text field gets focus and goes when it loses it, as in Plasma. As in Plasma's keyboard, the globe key opens a menu of the layouts above it, with Settings below them, and the space bar names the layout in use: the Terminal layout adds a row with Esc, Tab, Ctrl, Alt (Haiku's Command key), Home, End and the arrows. Ctrl and Alt hold for the next key, as Shift does. The menu's Emoji puts colour emoji in place of the letters, as Maliit (Plasma Mobile's keyboard) does: a grid scrolled sideways, recently used first, a bar of categories under it, and ABC back to the letters. Swiping across the letters types a word, as in FUTO Keyboard: an accent trail follows the finger, thinning and fading as it ages, the strip on top shows the likeliest words as you go, and on lift the best goes in with a space before it when it follows another word; tapping another swaps it in, backspace takes the whole word out. |
+| On-screen keyboard | `shell/src/Keyboard.cpp`, `vkbd/` | Letters and symbols; types through an input_server add-on, so any app gets the keys. Comes up when a text field gets focus and goes when it loses it, as in Plasma. As in Plasma's keyboard, the globe key opens a menu of the layouts above it, with Settings below them, and the space bar names the layout in use: the Terminal layout adds a row with Esc, Tab, Ctrl, Alt (Haiku's Command key), Home, End and the arrows. Ctrl and Alt hold for the next key, as Shift does. The microphone at the strip's end dictates, as FUTO's voice input does: a circle in place of the keys swells with the voice, a tap or 2 s of quiet after speech ends it, and whisper.cpp with FUTO's ACFT tiny.en turns it into text on the device (11 s of speech in about a second in QEMU). The menu's Emoji puts colour emoji in place of the letters, as Maliit (Plasma Mobile's keyboard) does: a grid scrolled sideways, recently used first, a bar of categories under it, and ABC back to the letters. Swiping across the letters types a word, as in FUTO Keyboard: an accent trail follows the finger, thinning and fading as it ages, the strip on top shows the likeliest words as you go, and on lift the best goes in with a space before it when it follows another word; tapping another swaps it in, backspace takes the whole word out. |
 | Touch | `touch/` | An input_server filter that makes a finger's press land where the finger is, makes taps count as clicks, and right-clicks when a finger is held still (see below). |
 
 The shell is one app, `MobileShell`, started by the launch daemon in place of
@@ -100,7 +100,8 @@ Tracker's desktop and the Deskbar (`packaging/user_launch`). It's packaged as
 
 Everything stays under the checkout (`third_party/`, `downloads/`, `build/`,
 `vm/` are git-ignored). A Linux host with `gh`, QEMU, socat, ImageMagick and
-the usual gcc build dependencies is enough. One-time setup:
+the usual gcc build dependencies is enough (CMake and Ninja for whisper.cpp;
+PipeWire's `pactl` and `pw-play` let `make test` try dictation). One-time setup:
 
 ```sh
 # Renku nightly and its package repository
@@ -113,6 +114,8 @@ curl -L -o downloads/noto_emoji_color-2.042-1-any.hpkg \
 # Sources: Renku, and Haiku's buildtools (jam, gcc)
 git clone --depth 1 https://github.com/RenkuOS/Source.git third_party/renku-src
 git clone --depth 1 https://github.com/haiku/buildtools.git third_party/buildtools
+# whisper.cpp for dictation (the Makefile builds it with scripts/build-whisper.sh)
+git clone --depth 1 --branch v1.9.5 https://github.com/ggerganov/whisper.cpp.git third_party/whisper.cpp
 mkdir -p third_party/bin && make -C third_party/buildtools/jam && cp third_party/buildtools/jam/bin.*/jam third_party/bin/
 # Host tools: bfs_shell and package (nasm isn't used for these; a stub passes configure)
 cd third_party/renku-src && mkdir generated.host && cd generated.host
@@ -122,6 +125,8 @@ PATH=$PWD/../../bin:$PATH jam -q '<build>bfs_shell' '<build>package'
 cd .. && mkdir generated.x86_64 && cd generated.x86_64
 HAIKU_NASM=$PWD/../../../scripts/nasm-stub ../configure --cross-tools-source ../../buildtools --build-cross-tools x86_64
 cd ../../.. && scripts/make-sysroot.sh
+# The dictation model, FUTO's ACFT tiny.en as ggml q8_0 (needs ~1 GB for PyTorch)
+scripts/make-voice-model.sh
 ```
 
 Then:
@@ -139,7 +144,7 @@ DISPLAY_MODE=gtk scripts/qemu.sh start
 
 | | |
 |---|---|
-| x86_64 in QEMU, 720×1440, on Renku nightly build00094 | the 0.1.0 ISO boots straight to the shell as a disk, and to it after **Try it out** as a CD; `make test` passes on it (status bar, navigation panel, home, action drawer, keyboard, a finger's tap launching an app from the drawer, launching Terminal full-screen with the keyboard coming up, typing into it with the on-screen keyboard, a finger's drag selecting, a ring showing around a held finger and the finger right-clicking to paste, the globe key's layout menu, the Terminal layout's Ctrl+C and Tab, the emoji and back, swiping a word, task switcher, closing an app and the keyboard going with it) |
+| x86_64 in QEMU, 720×1440, on Renku nightly build00094 | the 0.1.0 ISO boots straight to the shell as a disk, and to it after **Try it out** as a CD; `make test` passes on it (status bar, navigation panel, home, action drawer, keyboard, a finger's tap launching an app from the drawer, launching Terminal full-screen with the keyboard coming up, typing into it with the on-screen keyboard, a finger's drag selecting, a ring showing around a held finger and the finger right-clicking to paste, the globe key's layout menu, the Terminal layout's Ctrl+C and Tab, the emoji and back, swiping a word, dictating whisper.cpp's JFK sample through a virtual microphone, task switcher, closing an app and the keyboard going with it) |
 | App drawer, scrolling and flicking, Settings view, keyboard following focus in StyledEdit and the task switcher | checked by eye from screenshots, not by `make test` |
 | Android apps (Waydroid) | shelved: needs a Linux-compatible layer in Renku's kernel, plus binder; [Haiku-Linux-Bridge](https://github.com/AiLang-Author/Haiku-Linux-Bridge) (CC0, x86_64 only) could seed the syscall handlers |
 | PinePhone | not started: needs a Renku arm64 image for the A64 (Renku builds a generic arm64 MMC image) |
@@ -170,6 +175,9 @@ Known shortcuts (each marked `shortcut:` in the code):
   knows Terminal by its signature.
 - Tapping a text field that already has focus doesn't bring back a keyboard
   you hid: no message says so.
+- Dictation is English only (tiny.en), and whisper.cpp is built for AVX2:
+  on older x86 CPUs the microphone doesn't show. The model comes in the
+  package (44 MB).
 - Swipe typing knows 10,000 English words, matched by the shape of the path
   (not FUTO's neural decoder, whose licence doesn't fit). No suggestions
   while tapping letters, and no next-word prediction.
@@ -185,3 +193,8 @@ Known shortcuts (each marked `shortcut:` in the code):
   (Apache 2.0), which FUTO Keyboard keeps.
 - Emoji: Unicode's emoji-test.txt (Unicode License), drawn with Google's Noto
   Color Emoji (SIL Open Font License) from HaikuPorts.
+- Dictation: [whisper.cpp](https://github.com/ggerganov/whisper.cpp) (MIT),
+  OpenAI's [Whisper](https://github.com/openai/whisper) (MIT), and FUTO's
+  [ACFT tiny.en](https://huggingface.co/futo-org/acft-whisper-tiny.en)
+  fine-tune (Apache 2.0). The listening view and its loudness rules follow
+  FUTO's voice input; none of FUTO's app code is used.

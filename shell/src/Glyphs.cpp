@@ -208,6 +208,14 @@ draw_glyph(BView* view, Glyph glyph, BRect frame, rgb_color color, float level)
 			pen.Line(0.1f, 0.5f, 0.9f, 0.5f);
 			break;
 		}
+
+		case kGlyphMic:
+			view->StrokeRoundRect(pen.R(0.37f, 0.1f, 0.63f, 0.58f), pen.L(0.13f),
+				pen.L(0.13f));
+			view->StrokeArc(pen.R(0.24f, 0.2f, 0.76f, 0.7f), 180, 180);
+			pen.Line(0.5f, 0.7f, 0.5f, 0.86f);
+			pen.Line(0.36f, 0.88f, 0.64f, 0.88f);
+			break;
 	}
 
 	view->PopState();

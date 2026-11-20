@@ -72,6 +72,14 @@ static const bigtime_t kTrailFrame = 20000;
 // How often the strip follows the finger (FUTO: every 33 ms).
 static const bigtime_t kDecodeInterval = 50000;
 
+// Dictation. FUTO's circle has a radius of 80 dp times 0.8 plus twice the
+// loudness; here half that, at two pixels a dp, to fit the keyboard. The view
+// looks at the voice every 50 ms.
+static const uint32 kMsgVoiceTick = 'vTck';
+static const uint32 kMsgVoiceDone = 'vDon';
+static const bigtime_t kVoiceFrame = 50000;
+static const float kCircleRadius = 160;
+
 
 // Haiku key codes for the US layout, so apps that look at "key" (shortcuts)
 // get one.
@@ -113,7 +121,13 @@ KeyboardView::KeyboardView(BRect frame)
 	fSuggestionPressed(-1),
 	fSpaceBefore(false),
 	fBuffer(NULL),
-	fBufferView(NULL)
+	fBufferView(NULL),
+	fVoiceAvailable(VoiceInput::Available()),
+	fVoiceState(kVoiceOff),
+	fMicPressed(false),
+	fShownMagnitude(0),
+	fVoiceRunner(NULL),
+	fVoiceThread(-1)
 {
 	// Draw() paints the background with the keys: app_server filling it
 	// first would show as a flash under the trail on every frame.
@@ -126,6 +140,11 @@ KeyboardView::~KeyboardView()
 {
 	delete fTrailRunner;
 	delete fBuffer;
+	delete fVoiceRunner;
+	if (fVoiceThread >= 0) {
+		status_t result;
+		wait_for_thread(fVoiceThread, &result);
+	}
 }
 
 
@@ -159,6 +178,10 @@ KeyboardView::_Render(BView* view, BRect updateRect)
 	view->SetHighColor(Theme::kPanel);
 	view->FillRect(updateRect);
 	_DrawSuggestions(view);
+	if (fVoiceState != kVoiceOff) {
+		_DrawVoice(view);
+		return;
+	}
 	if (fEmoji)
 		fEmojiPanel.Draw(view, fPressedEmoji);
 
@@ -235,6 +258,19 @@ KeyboardView::MouseDown(BPoint where)
 		fMenuPressed = _MenuRowAt(where);
 		SetMouseEventMask(B_POINTER_EVENTS, B_LOCK_WINDOW_FOCUS);
 		Invalidate();
+		return;
+	}
+
+	if (fVoiceState != kVoiceOff) {
+		// a tap anywhere ends the listening, on lift
+		SetMouseEventMask(B_POINTER_EVENTS, B_LOCK_WINDOW_FOCUS);
+		return;
+	}
+
+	if (fVoiceAvailable && _MicFrame().Contains(where)) {
+		fMicPressed = true;
+		SetMouseEventMask(B_POINTER_EVENTS, B_LOCK_WINDOW_FOCUS);
+		Invalidate(_MicFrame());
 		return;
 	}
 
@@ -323,6 +359,26 @@ KeyboardView::MouseUp(BPoint where)
 		if (row < 0 || row == pressed)
 			CloseMenu();
 		Invalidate();
+		return;
+	}
+
+	if (fVoiceState == kListening) {
+		_StopVoice();
+		return;
+	}
+	if (fVoiceState == kVoiceFailed) {
+		fVoiceState = kVoiceOff;
+		Invalidate();
+		return;
+	}
+	if (fVoiceState == kTranscribing)
+		return;
+
+	if (fMicPressed) {
+		fMicPressed = false;
+		Invalidate(_MicFrame());
+		if (_MicFrame().Contains(where))
+			_StartVoice();
 		return;
 	}
 
@@ -609,6 +665,35 @@ KeyboardView::_Send(const char* bytes, int32 code, char raw)
 void
 KeyboardView::MessageReceived(BMessage* message)
 {
+	if (message->what == kMsgVoiceTick) {
+		// ease towards the voice's loudness, as FUTO's 100 ms animation does
+		if (fVoiceState == kListening) {
+			fShownMagnitude += (fVoice.Magnitude() - fShownMagnitude) * 0.5f;
+			if (fVoice.Finished())
+				_StopVoice();
+		}
+		Invalidate();
+		return;
+	}
+	if (message->what == kMsgVoiceDone) {
+		status_t result;
+		wait_for_thread(fVoiceThread, &result);
+		fVoiceThread = -1;
+		delete fVoiceRunner;
+		fVoiceRunner = NULL;
+		fVoiceState = kVoiceOff;
+
+		// in like a swiped word, a space before it when it follows one
+		BString text = message->GetString("text", "");
+		if (!text.IsEmpty()) {
+			if (fSpaceBefore)
+				_SendText(" ");
+			_SendText(text);
+			fSpaceBefore = true;
+		}
+		Invalidate();
+		return;
+	}
 	if (message->what != kMsgAnimate) {
 		BView::MessageReceived(message);
 		return;
@@ -701,12 +786,15 @@ KeyboardView::_EndWord()
 }
 
 
-/*!	Three slots across the strip: the best word in the middle. */
+/*!	Three slots across the strip, the best word in the middle, then the
+	microphone when there's dictation.
+*/
 BRect
 KeyboardView::_SuggestionFrame(int32 slot) const
 {
 	BRect bounds = Bounds();
-	float width = (bounds.Width() - kGap * 2) / 3;
+	float mic = fVoiceAvailable ? Theme::kSuggestionHeight + kGap : 0;
+	float width = (bounds.Width() - kGap * 2 - mic) / 3;
 	float left = kGap + slot * width;
 	return BRect(left, kGap / 2, left + width - 1,
 		kGap / 2 + Theme::kSuggestionHeight - 1);
@@ -758,6 +846,117 @@ KeyboardView::_DrawSuggestions(BView* view)
 			frame.left + (frame.Width() - face.StringWidth(word)) / 2,
 			frame.top + (frame.Height() + height.ascent - height.descent) / 2));
 	}
+
+	if (fVoiceAvailable) {
+		BRect mic = _MicFrame();
+		if (fMicPressed || fVoiceState == kListening) {
+			view->SetHighColor(Theme::kAccent);
+			view->FillRoundRect(mic, 8, 8);
+		}
+		draw_glyph(view, kGlyphMic, mic.InsetByCopy(10, 10), Theme::kText);
+	}
+}
+
+
+BRect
+KeyboardView::_MicFrame() const
+{
+	BRect bounds = Bounds();
+	return BRect(bounds.right - kGap - Theme::kSuggestionHeight, kGap / 2,
+		bounds.right - kGap, kGap / 2 + Theme::kSuggestionHeight - 1);
+}
+
+
+void
+KeyboardView::_StartVoice()
+{
+	CloseMenu();
+	fSuggestions.clear();
+	fShownMagnitude = 0;
+	fVoiceState = fVoice.Start() == B_OK ? kListening : kVoiceFailed;
+	if (fVoiceState == kListening && fVoiceRunner == NULL) {
+		BMessage tick(kMsgVoiceTick);
+		fVoiceRunner = new BMessageRunner(BMessenger(this), &tick, kVoiceFrame);
+	}
+	Invalidate();
+}
+
+
+void
+KeyboardView::_StopVoice()
+{
+	fVoice.Stop();
+	fVoiceState = kTranscribing;
+	fVoiceThread = spawn_thread(_Transcribe, "dictation", B_NORMAL_PRIORITY,
+		this);
+	resume_thread(fVoiceThread);
+	Invalidate();
+}
+
+
+/*static*/ status_t
+KeyboardView::_Transcribe(void* data)
+{
+	KeyboardView* view = (KeyboardView*)data;
+	BMessage done(kMsgVoiceDone);
+	done.AddString("text", view->fVoice.Transcribe());
+	BMessenger(view).SendMessage(&done);
+	return B_OK;
+}
+
+
+/*!	FUTO's listening view, in place of the keys: a circle swelling with the
+	voice behind the microphone, what it's hearing under it; then a spinner
+	while the words are worked out.
+*/
+void
+KeyboardView::_DrawVoice(BView* view)
+{
+	BRect bounds = Bounds();
+	BRect panel(bounds.left, kGap + Theme::kSuggestionHeight, bounds.right,
+		bounds.bottom);
+	BPoint center((panel.left + panel.right) / 2,
+		(panel.top + panel.bottom) / 2 - 20);
+	BRegion clip(panel);
+	view->ConstrainClippingRegion(&clip);
+
+	const char* text = NULL;
+	if (fVoiceState == kListening) {
+		float radius = kCircleRadius / 2 * (0.8f + fShownMagnitude * 2);
+		view->SetHighColor(mix_color(Theme::kSurface, Theme::kAccent, 90));
+		view->FillEllipse(center, radius, radius);
+		BRect icon(center.x - 36, center.y - 36, center.x + 36, center.y + 36);
+		draw_glyph(view, kGlyphMic, icon, Theme::kText);
+		switch (fVoice.CurrentState()) {
+			case VoiceInput::kNotTalkedYet:
+				text = "Try saying something";
+				break;
+			case VoiceInput::kTalking:
+				text = "Listening\xe2\x80\xa6";
+				break;
+			case VoiceInput::kMicMayBeBlocked:
+				text = "No audio detected. Is the microphone muted?";
+				break;
+		}
+	} else if (fVoiceState == kTranscribing) {
+		float turn = (system_time() / 1000 % 1000) * 0.36f;
+		view->SetHighColor(Theme::kAccent);
+		view->SetPenSize(6);
+		view->StrokeArc(center, 30, 30, turn, 270);
+		view->SetPenSize(1);
+		text = "Transcribing\xe2\x80\xa6";
+	} else
+		text = "No microphone found. Tap to go back.";
+
+	BFont font(be_plain_font);
+	font.SetSize(20);
+	view->SetFont(&font);
+	view->SetHighColor(Theme::kText);
+	view->SetDrawingMode(B_OP_OVER);
+	view->DrawString(text, BPoint(center.x - font.StringWidth(text) / 2,
+		center.y + kCircleRadius / 2 + 40));
+	view->SetDrawingMode(B_OP_COPY);
+	view->ConstrainClippingRegion(NULL);
 }
 
 

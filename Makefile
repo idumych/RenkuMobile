@@ -34,6 +34,13 @@ override LDFLAGS += -B$(SYSROOT)/develop/lib -L$(SYSROOT)/develop/lib \
 INPUT_SERVER := $(SYSROOT)/servers/input_server
 endif
 
+# whisper.cpp for the keyboard's dictation (scripts/build-whisper.sh)
+WHISPER := build/whisper-$(ARCH)
+WHISPER_INCLUDES := -I$(ROOT)/third_party/whisper.cpp/include \
+	-I$(ROOT)/third_party/whisper.cpp/ggml/include
+WHISPER_LIBS := $(WHISPER)/src/libwhisper.a $(WHISPER)/ggml/src/libggml.a \
+	$(WHISPER)/ggml/src/libggml-cpu.a $(WHISPER)/ggml/src/libggml-base.a
+
 SHELL_SOURCES := $(wildcard shell/src/*.cpp)
 SHELL_OBJECTS := $(patsubst shell/src/%.cpp,$(OUT)/shell/%.o,$(SHELL_SOURCES))
 
@@ -41,10 +48,16 @@ all: $(OUT)/MobileShell $(OUT)/renku_virtual_keyboard $(OUT)/renku_touch
 
 $(OUT)/shell/%.o: shell/src/%.cpp shell/src/*.h vkbd/VirtualKeyboard.h
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(WHISPER_INCLUDES) -c $< -o $@
 
-$(OUT)/MobileShell: $(SHELL_OBJECTS)
-	$(CXX) $(LDFLAGS) -o $@ $^ -lbe -lbnetapi -lnetwork
+$(OUT)/shell/VoiceInput.o: $(WHISPER)/src/libwhisper.a
+
+$(WHISPER)/src/libwhisper.a:
+	sh scripts/build-whisper.sh
+
+$(OUT)/MobileShell: $(SHELL_OBJECTS) $(WHISPER)/src/libwhisper.a
+	$(CXX) $(LDFLAGS) -o $@ $(SHELL_OBJECTS) $(WHISPER_LIBS) -lbe -lbnetapi \
+		-lnetwork -lmedia
 
 $(OUT)/renku_virtual_keyboard: vkbd/VirtualKeyboardDevice.cpp vkbd/VirtualKeyboard.h
 	@mkdir -p $(dir $@)

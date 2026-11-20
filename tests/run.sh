@@ -27,8 +27,17 @@ PANEL=22,25,27
 SURFACE=42,46,50
 
 $Q stop >/dev/null 2>&1 || true
-$Q start
-trap '$Q stop >/dev/null' EXIT
+# Dictation needs a microphone: with PipeWire's tools, a silent sink on the host
+# whose monitor is the VM's microphone, so that a WAV played into it is heard.
+SINK=
+if command -v pactl >/dev/null && command -v pw-play >/dev/null; then
+	SINK=$(pactl load-module module-null-sink sink_name=renku_mobile_test)
+	$Q start -audiodev pa,id=snd0,in.name=renku_mobile_test.monitor \
+		-device ich9-intel-hda -device hda-micro,audiodev=snd0
+else
+	$Q start
+fi
+trap '$Q stop >/dev/null; [ -z "$SINK" ] || pactl unload-module $SINK' EXIT
 
 # Boot: wait for the status bar.
 for i in $(seq 60); do
@@ -109,8 +118,30 @@ changed=$(magick compare -metric AE "$SHOTS/test-letters.png" "$SHOTS/test-swipe
 	-crop 25x14+110+173 null: 2>&1 || true)
 if [ "${changed%% *}" != 0 ]; then echo "ok   a swipe types a word"
 else echo "FAIL a swipe types a word: the prompt is unchanged"; fail=1; fi
-check_not swiped 360 1022 $PANEL "the strip suggests words for the swipe"
+changed=$(magick compare -metric AE "$SHOTS/test-letters.png" "$SHOTS/test-swiped.png" \
+	-crop 200x40+232+1004 null: 2>&1 || true)
+if [ "${changed%% *}" != 0 ]; then echo "ok   the strip suggests words for the swipe"
+else echo "FAIL the strip suggests words for the swipe: its middle is empty"; fail=1; fi
 $Q tap 660 1250; sleep 1
+
+# Dictation: the microphone opens the listening circle; whisper.cpp's JFK
+# sample played into it is typed at the prompt once the quiet after it ends it.
+if [ -n "$SINK" ]; then
+	$Q tap 688 1026; sleep 1.5; shot listening
+	check listening 405 1195 48,91,114 "the microphone opens the listening circle"
+	pw-play --target renku_mobile_test third_party/whisper.cpp/samples/jfk.wav
+	for i in $(seq 20); do
+		sleep 1; shot dictated
+		[ "$(pixel dictated 15 1018)" != "$(pixel listening 15 1018)" ] && break
+	done
+	sleep 1; shot dictated
+	changed=$(magick compare -metric AE "$SHOTS/test-letters.png" "$SHOTS/test-dictated.png" \
+		-crop 25x14+110+173 null: 2>&1 || true)
+	if [ "${changed%% *}" != 0 ]; then echo "ok   dictation types what was said"
+	else echo "FAIL dictation types what was said: the prompt is unchanged"; fail=1; fi
+else
+	echo "skip dictation: no pactl/pw-play for a microphone"
+fi
 
 # Task switcher shows a card; then close the app from the navigation panel.
 $Q tap 160 1408; sleep 2; shot tasks
