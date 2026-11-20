@@ -7,6 +7,8 @@
 #   stop                     hard power-off (shut down from inside first)
 #   shot FILE.png            screenshot
 #   tap X Y | down X Y | up X Y | drag X1 Y1 X2 Y2   pointer via QMP (usb-tablet)
+#   touch X Y | hold X Y [S] | flick X1 Y1 X2 Y2   the same as a finger: no hover
+#                            before the press
 #   key KEYS… | type TEXT    keyboard via the monitor
 #
 # The screen comes from virtio-vga's EDID (xres/yres): Renku's VESA driver can only
@@ -42,10 +44,10 @@ stop)
 	hmp quit; for i in $(seq 20); do running || break; sleep 1; done; echo stopped ;;
 shot)
 	hmp "screendump $VMDIR/.shot.ppm"; sleep 1; magick "$VMDIR/.shot.ppm" "$1"; echo "$1" ;;
-tap|down|up|move)
+tap|down|up|move|touch|hold)
 	python3 "$ROOT/scripts/qmp-pointer.py" "$QMP" "$cmd" "$@" ;;
-drag)
-	python3 "$ROOT/scripts/qmp-pointer.py" "$QMP" drag "$@" ;;
+drag|flick)
+	python3 "$ROOT/scripts/qmp-pointer.py" "$QMP" "$cmd" "$@" ;;
 key)
 	for k in "$@"; do hmp "sendkey $k"; sleep 0.15; done ;;
 type)

@@ -1,7 +1,8 @@
 /*
  * HomeScreen: the window behind every app. A clock, a grid of favourite apps
  * and a dock over the wallpaper; swipe up (or tap the handle) for the app
- * drawer with every app, swipe down to close it again.
+ * drawer with every app, swipe down to close it again. The drawer scrolls with
+ * the finger and keeps going after a flick.
  */
 #ifndef HOME_SCREEN_H
 #define HOME_SCREEN_H
@@ -15,6 +16,7 @@
 class AppList;
 struct AppEntry;
 class BBitmap;
+class BMessageRunner;
 
 
 class HomeView : public BView {
@@ -50,6 +52,8 @@ private:
 			void				_SetDrawer(bool open, bool settings = false);
 			float				_MaxScroll() const;
 			const Cell*			_CellAt(BPoint where) const;
+			void				_StopFling();
+			void				_Fling();
 
 			AppList*			fApps;
 			BBitmap*			fWallpaper;
@@ -69,6 +73,14 @@ private:
 			bool				fMoved;
 			BPoint				fDownPoint;
 			const Cell*			fPressedCell;
+
+			// The finger's speed in pixels per second, and the scrolling it
+			// keeps up after a flick
+			float				fVelocity;
+			BPoint				fLastPoint;
+			bigtime_t			fLastTime;
+			BMessageRunner*		fFling;
+			bigtime_t			fFlingTime;
 };
 
 

@@ -27,7 +27,8 @@ enum Glyph {
 	kGlyphChevronUp,
 	kGlyphShift,
 	kGlyphBackspace,
-	kGlyphReturn
+	kGlyphReturn,
+	kGlyphGlobe
 };
 
 

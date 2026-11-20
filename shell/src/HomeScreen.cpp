@@ -11,6 +11,7 @@
 #include <Bitmap.h>
 #include <GradientLinear.h>
 #include <GradientRadial.h>
+#include <MessageRunner.h>
 #include <Region.h>
 #include <Shape.h>
 
@@ -21,8 +22,14 @@
 #include <time.h>
 
 
-static const float kTapSlop = 14;
+// Fingers wobble more than a mouse when they tap.
+static const float kTapSlop = 20;
 static const float kDrawerSwipe = 70;
+// Slower than this when the finger lifts, the drawer stops with it; a flick
+// then loses speed like this every second.
+static const float kFlingMinVelocity = 300;
+static const float kFlingFriction = 0.06f;
+static const bigtime_t kFlingInterval = 16000;
 static const float kClockTop = Theme::kStatusBarHeight + 70;
 static const float kGridTop = 380;
 static const float kDrawerTop = Theme::kStatusBarHeight + 96;
@@ -49,7 +56,11 @@ HomeView::HomeView(BRect frame, AppList* apps)
 	fScrollAtDown(0),
 	fTracking(false),
 	fMoved(false),
-	fPressedCell(NULL)
+	fPressedCell(NULL),
+	fVelocity(0),
+	fLastTime(0),
+	fFling(NULL),
+	fFlingTime(0)
 {
 	SetViewColor(B_TRANSPARENT_COLOR);
 }
@@ -57,6 +68,7 @@ HomeView::HomeView(BRect frame, AppList* apps)
 
 HomeView::~HomeView()
 {
+	delete fFling;
 	delete fWallpaper;
 	delete fBuffer;
 }
@@ -94,11 +106,18 @@ HomeView::Draw(BRect updateRect)
 void
 HomeView::MouseDown(BPoint where)
 {
+	// A touch stops a flick, and only that.
+	bool flinging = fFling != NULL;
+	_StopFling();
+
 	fTracking = true;
-	fMoved = false;
+	fMoved = flinging;
 	fDownPoint = where;
 	fScrollAtDown = fScroll;
-	fPressedCell = _CellAt(where);
+	fVelocity = 0;
+	fLastPoint = where;
+	fLastTime = system_time();
+	fPressedCell = flinging ? NULL : _CellAt(where);
 	SetMouseEventMask(B_POINTER_EVENTS, B_LOCK_WINDOW_FOCUS);
 	if (fPressedCell != NULL)
 		_Render();
@@ -110,6 +129,15 @@ HomeView::MouseMoved(BPoint where, uint32 transit, const BMessage* dragMessage)
 {
 	if (!fTracking)
 		return;
+
+	// Smooth the speed over the last few moves.
+	bigtime_t now = system_time();
+	if (now > fLastTime) {
+		float velocity = (where.y - fLastPoint.y) * 1000000 / (now - fLastTime);
+		fVelocity = fVelocity * 0.4f + velocity * 0.6f;
+	}
+	fLastPoint = where;
+	fLastTime = now;
 
 	float dy = where.y - fDownPoint.y;
 	if (!fMoved && fabsf(dy) < kTapSlop && fabsf(where.x - fDownPoint.x) < kTapSlop)
@@ -151,6 +179,14 @@ HomeView::MouseUp(BPoint where)
 	fPressedCell = NULL;
 
 	if (!tap) {
+		// A finger that rested before lifting doesn't flick.
+		if (fDrawerOpen && system_time() - fLastTime < 100000
+			&& fabsf(fVelocity) > kFlingMinVelocity) {
+			fFlingTime = system_time();
+			BMessage tick(kMsgAnimate);
+			fFling = new BMessageRunner(BMessenger(this), &tick,
+				kFlingInterval);
+		}
 		_Render();
 		return;
 	}
@@ -176,6 +212,10 @@ HomeView::MouseUp(BPoint where)
 void
 HomeView::MessageReceived(BMessage* message)
 {
+	if (message->what == kMsgAnimate) {
+		_Fling();
+		return;
+	}
 	if (message->what == kMsgPulse) {
 		// Redraw when the minute changes.
 		static int lastMinute = -1;
@@ -451,6 +491,7 @@ HomeView::_RenderClock(BView* view)
 void
 HomeView::_SetDrawer(bool open, bool settings)
 {
+	_StopFling();
 	fDrawerOpen = open;
 	if (settings != fSettingsOnly) {
 		fSettingsOnly = settings;
@@ -493,6 +534,32 @@ HomeView::_CellAt(BPoint where) const
 			return &cell;
 	}
 	return NULL;
+}
+
+
+void
+HomeView::_StopFling()
+{
+	delete fFling;
+	fFling = NULL;
+}
+
+
+void
+HomeView::_Fling()
+{
+	bigtime_t now = system_time();
+	float seconds = (now - fFlingTime) / 1000000.0f;
+	fFlingTime = now;
+
+	fVelocity *= powf(kFlingFriction, seconds);
+	float scroll = std::clamp(fScroll - fVelocity * seconds, 0.0f,
+		_MaxScroll());
+	bool stopped = scroll == fScroll || fabsf(fVelocity) < 20;
+	fScroll = scroll;
+	_Render();
+	if (stopped)
+		_StopFling();
 }
 
 

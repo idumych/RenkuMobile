@@ -8,11 +8,11 @@
 #ifndef THEME_H
 #define THEME_H
 
+#include "../../vkbd/VirtualKeyboard.h"
+
 #include <GraphicsDefs.h>
 #include <Rect.h>
 
-
-#define SHELL_SIGNATURE "application/x-vnd.Renku-MobileShell"
 
 namespace Theme {
 
@@ -20,6 +20,8 @@ namespace Theme {
 const float kStatusBarHeight = 44;
 const float kNavBarHeight = 64;
 const float kKeyboardHeight = 330;
+// what the keyboard's row of extra keys adds to it
+const float kKeyboardExtrasHeight = 64;
 
 // Home grid
 const int32 kGridColumns = 4;
@@ -53,6 +55,7 @@ enum {
 	kMsgCloseWindow = 'clsW',		// "token": int32 server token
 	kMsgTakeScreenshot = 'shot',
 	kMsgShowSettings = 'sett',
+	kMsgKeyboardResized = 'kbdR',
 	kMsgPulse = 'puls',
 	kMsgAnimate = 'anim'
 };

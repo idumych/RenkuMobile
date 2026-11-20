@@ -1,8 +1,9 @@
-# Renku Mobile: the phone shell and the virtual keyboard add-on.
+# Renku Mobile: the phone shell and its input_server add-ons.
 #
 # On Linux it cross-builds with the toolchain from third_party (see README);
 # on Renku/Haiku it builds natively.
-#   make            build/$(ARCH)/MobileShell, build/$(ARCH)/renku_virtual_keyboard
+#   make            build/$(ARCH)/MobileShell, build/$(ARCH)/renku_virtual_keyboard,
+#                   build/$(ARCH)/renku_touch
 #   make package    build/renku_mobile-<version>-$(ARCH).hpkg
 #   make test       host-side self-checks
 
@@ -36,7 +37,7 @@ endif
 SHELL_SOURCES := $(wildcard shell/src/*.cpp)
 SHELL_OBJECTS := $(patsubst shell/src/%.cpp,$(OUT)/shell/%.o,$(SHELL_SOURCES))
 
-all: $(OUT)/MobileShell $(OUT)/renku_virtual_keyboard
+all: $(OUT)/MobileShell $(OUT)/renku_virtual_keyboard $(OUT)/renku_touch
 
 $(OUT)/shell/%.o: shell/src/%.cpp shell/src/*.h vkbd/VirtualKeyboard.h
 	@mkdir -p $(dir $@)
@@ -49,6 +50,10 @@ $(OUT)/renku_virtual_keyboard: vkbd/VirtualKeyboardDevice.cpp vkbd/VirtualKeyboa
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -fPIC -shared $(LDFLAGS) -o $@ $< -lbe $(INPUT_SERVER)
 
+$(OUT)/renku_touch: touch/TouchFilter.cpp vkbd/VirtualKeyboard.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -fPIC -shared $(LDFLAGS) -o $@ $< -lbe $(INPUT_SERVER)
+
 package: all
 	sh packaging/build-hpkg.sh $(ARCH) $(VERSION)
 
@@ -56,6 +61,7 @@ test:
 	sh tests/run.sh
 
 clean:
-	rm -rf build/$(ARCH)/shell $(OUT)/MobileShell $(OUT)/renku_virtual_keyboard
+	rm -rf build/$(ARCH)/shell $(OUT)/MobileShell $(OUT)/renku_virtual_keyboard \
+		$(OUT)/renku_touch
 
 .PHONY: all package test clean

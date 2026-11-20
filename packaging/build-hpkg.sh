@@ -8,9 +8,11 @@ ARCH=$1 VERSION=$2
 OUT=build/$ARCH
 TREE=build/hpkg-$ARCH
 rm -rf "$TREE"
-mkdir -p "$TREE/apps" "$TREE/add-ons/input_server/devices" "$TREE/data/user_launch"
+mkdir -p "$TREE/apps" "$TREE/add-ons/input_server/devices" \
+	"$TREE/add-ons/input_server/filters" "$TREE/data/user_launch"
 cp "$OUT/MobileShell" "$TREE/apps/"
 cp "$OUT/renku_virtual_keyboard" "$TREE/add-ons/input_server/devices/"
+cp "$OUT/renku_touch" "$TREE/add-ons/input_server/filters/"
 cp packaging/user_launch "$TREE/data/user_launch/renku_mobile"
 cat > "$TREE/.PackageInfo" <<INFO
 name			renku_mobile
@@ -23,7 +25,7 @@ vendor			"Renku Mobile"
 copyrights		{ "2026 Renku Mobile contributors" }
 licenses		{ "MIT" }
 provides		{ renku_mobile = $VERSION  app:MobileShell = $VERSION }
-requires		{ haiku >= r1~beta6 }
+requires		{ haiku >= r1~beta6  noto_emoji_color }
 INFO
 PKG=build/renku_mobile-$VERSION-1-$ARCH.hpkg
 rm -f "$PKG"

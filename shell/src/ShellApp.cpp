@@ -11,6 +11,7 @@
 #include "Panels.h"
 #include "TaskSwitcher.h"
 #include "Theme.h"
+#include "TouchRing.h"
 #include "WindowTracker.h"
 
 #include <Application.h>
@@ -34,6 +35,7 @@ public:
 	virtual	void				MessageReceived(BMessage* message);
 
 private:
+			void				_SetKeyboard(bool show);
 			void				_UpdateWorkArea();
 			void				_Launch(const entry_ref& ref);
 			void				_HideOverlays();
@@ -47,10 +49,12 @@ private:
 			StatusBarView*		fStatusView;
 			PanelWindow*		fNavBar;
 			PanelWindow*		fKeyboard;
+			KeyboardView*		fKeyboardView;
 			OverlayWindow*		fDrawerWindow;
 			ActionDrawerView*	fDrawer;
 			OverlayWindow*		fTasksWindow;
 			TaskSwitcherView*	fTasks;
+			TouchRingWindow*	fTouchRing;
 
 			BMessageRunner*		fPulse;
 			BMessageRunner*		fTrackRunner;
@@ -61,6 +65,9 @@ ShellApp::ShellApp()
 	:
 	BApplication(SHELL_SIGNATURE),
 	fTracker(be_app->Team()),
+	fKeyboard(NULL),
+	fKeyboardView(NULL),
+	fTouchRing(NULL),
 	fPulse(NULL),
 	fTrackRunner(NULL)
 {
@@ -99,7 +106,8 @@ ShellApp::ReadyToRun()
 	frame.bottom = frame.top - 1;
 	frame.top = frame.bottom - Theme::kKeyboardHeight + 1;
 	fKeyboard = new PanelWindow(frame, "Keyboard");
-	fKeyboard->AddChild(new KeyboardView(fKeyboard->Bounds()));
+	fKeyboardView = new KeyboardView(fKeyboard->Bounds());
+	fKeyboard->AddChild(fKeyboardView);
 	// Hide() then Show() starts a window's thread but leaves it hidden.
 	fKeyboard->Hide();
 	fKeyboard->Show();
@@ -120,6 +128,10 @@ ShellApp::ReadyToRun()
 	fTasksWindow->AddChild(fTasks);
 	fTasksWindow->Hide();
 	fTasksWindow->Show();
+
+	fTouchRing = new TouchRingWindow();
+	fTouchRing->Hide();
+	fTouchRing->Show();
 
 	_UpdateWorkArea();
 
@@ -153,6 +165,7 @@ ShellApp::MessageReceived(BMessage* message)
 
 		case kMsgGoHome:
 			_HideOverlays();
+			_SetKeyboard(false);
 			fTracker.MinimizeAll();
 			if (fHome->Lock()) {
 				fHome->View()->ShowHome();
@@ -213,22 +226,31 @@ ShellApp::MessageReceived(BMessage* message)
 
 		case kMsgToggleKeyboard:
 		{
-			bool show = false;
+			bool hidden = true;
 			if (fKeyboard->Lock()) {
-				show = fKeyboard->IsHidden();
-				if (show)
-					fKeyboard->Show();
-				else
-					fKeyboard->Hide();
+				hidden = fKeyboard->IsHidden();
 				fKeyboard->Unlock();
 			}
-			if (fDrawerWindow->Lock()) {
-				fDrawer->SetKeyboardShown(show);
-				fDrawerWindow->Unlock();
-			}
-			_UpdateWorkArea();
+			_SetKeyboard(hidden);
 			break;
 		}
+
+		case kMsgTextFocus:
+			// From the input_server add-on: as in Plasma, the keyboard comes
+			// up with a text field and goes with it.
+			if (fKeyboard != NULL)
+				_SetKeyboard(message->GetBool("text"));
+			break;
+
+		case kMsgKeyboardResized:
+			_UpdateWorkArea();
+			break;
+
+		case kMsgTouchHold:
+			// From the touch filter: a finger held still towards a long press.
+			if (fTouchRing != NULL)
+				fTouchRing->PostMessage(message);
+			break;
 
 		case kMsgTakeScreenshot:
 		{
@@ -249,14 +271,35 @@ ShellApp::MessageReceived(BMessage* message)
 
 
 void
+ShellApp::_SetKeyboard(bool show)
+{
+	if (fKeyboard->Lock()) {
+		if (show && fKeyboard->IsHidden())
+			fKeyboard->Show();
+		else if (!show && !fKeyboard->IsHidden()) {
+			fKeyboardView->CloseMenu();
+			fKeyboard->Hide();
+		}
+		fKeyboard->Unlock();
+	}
+	if (fDrawerWindow->Lock()) {
+		fDrawer->SetKeyboardShown(show);
+		fDrawerWindow->Unlock();
+	}
+	_UpdateWorkArea();
+}
+
+
+void
 ShellApp::_UpdateWorkArea()
 {
 	BRect area = fScreen;
 	area.top += Theme::kStatusBarHeight;
 	area.bottom -= Theme::kNavBarHeight;
 	if (fKeyboard->Lock()) {
+		// as tall as its layout makes it
 		if (!fKeyboard->IsHidden())
-			area.bottom -= Theme::kKeyboardHeight;
+			area.bottom -= fKeyboard->Frame().Height() + 1;
 		fKeyboard->Unlock();
 	}
 	fTracker.SetWorkArea(area);

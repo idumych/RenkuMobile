@@ -198,6 +198,16 @@ draw_glyph(BView* view, Glyph glyph, BRect frame, rgb_color color, float level)
 			pen.Line(0.2f, 0.6f, 0.38f, 0.42f);
 			pen.Line(0.2f, 0.6f, 0.38f, 0.78f);
 			break;
+
+		case kGlyphGlobe:
+		{
+			BPoint c = pen.P(0.5f, 0.5f);
+			// an outline, a meridian and the equator: more runs together small
+			view->StrokeEllipse(c, pen.L(0.4f), pen.L(0.4f));
+			view->StrokeEllipse(c, pen.L(0.17f), pen.L(0.4f));
+			pen.Line(0.1f, 0.5f, 0.9f, 0.5f);
+			break;
+		}
 	}
 
 	view->PopState();
