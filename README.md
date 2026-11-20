@@ -10,6 +10,34 @@ Page with screenshots: https://idumych.github.io/RenkuMobile/
 |---|---|---|---|---|
 | <img src="docs/screenshots/home.png" width="160" alt="Home screen"> | <img src="docs/screenshots/app-drawer.png" width="160" alt="App drawer"> | <img src="docs/screenshots/action-drawer.png" width="160" alt="Action drawer"> | <img src="docs/screenshots/terminal-keyboard.png" width="160" alt="Terminal with the on-screen keyboard"> | <img src="docs/screenshots/task-switcher.png" width="160" alt="Task switcher"> |
 
+## Try it
+
+Download the ISO from the [latest release](https://github.com/idumych/RenkuMobile/releases/latest)
+and check it with `sha256sum -c RenkuMobile-*.iso.sha256`. It's the Renku
+nightly (build00094) with Renku Mobile added, for x86_64 PCs and VMs.
+
+**QEMU** (tested): boot it as a disk for the phone screen at 720×1440. Boot
+from a copy, because the disk is written to:
+
+```sh
+cp RenkuMobile-0.1.0-x86_64.iso phone.img
+qemu-system-x86_64 -enable-kvm -cpu host -smp 2 -m 2048 -rtc base=localtime \
+	-drive file=phone.img,format=raw \
+	-device virtio-vga,xres=720,yres=1440 -device qemu-xhci -device usb-tablet
+```
+
+It boots straight to the home screen. Use the mouse as your finger: tap,
+or press and drag to swipe.
+
+Booted as a CD (`-cdrom RenkuMobile-0.1.0-x86_64.iso`), or from a USB stick
+or DVD, Renku's Welcome window comes first because the medium is read-only:
+choose **Try it out** to get to the phone shell. **Install** puts the regular
+Renku on disk, with Renku Mobile in it.
+
+Untested: VirtualBox and real hardware. Without `virtio-vga` the screen is
+whatever size the VESA driver picks; the shell fills it, but it's laid out
+for 720×1440.
+
 ## What's in it
 
 | Part | Where | What it does |
@@ -69,7 +97,7 @@ Then:
 
 ```sh
 make package               # build/renku_mobile-0.1.0-1-x86_64.hpkg
-scripts/build-image.sh     # vm/renku-mobile.img
+scripts/build-image.sh     # vm/renku-mobile.img (IMG=… for another name: it's a bootable ISO)
 DISPLAY_MODE=gtk scripts/qemu.sh start
 ```
 
@@ -80,8 +108,9 @@ DISPLAY_MODE=gtk scripts/qemu.sh start
 
 | | |
 |---|---|
-| x86_64 in QEMU, 720×1440, on Renku nightly build00094 | boots straight to the shell; `make test` passes (status bar, navigation panel, home, action drawer, keyboard, launching Terminal full-screen, typing into it with the on-screen keyboard, task switcher, closing an app) |
+| x86_64 in QEMU, 720×1440, on Renku nightly build00094 | the 0.1.0 ISO boots straight to the shell as a disk, and to it after **Try it out** as a CD; `make test` passes on it (status bar, navigation panel, home, action drawer, keyboard, launching Terminal full-screen, typing into it with the on-screen keyboard, task switcher, closing an app) |
 | App drawer, scrolling, Settings view | checked by eye from screenshots, not by `make test` |
+| Android apps (Waydroid) | shelved: needs a Linux-compatible layer in Renku's kernel, plus binder; [Haiku-Linux-Bridge](https://github.com/AiLang-Author/Haiku-Linux-Bridge) (CC0, x86_64 only) could seed the syscall handlers |
 | PinePhone | not started: needs a Renku arm64 image for the A64 (Renku builds a generic arm64 MMC image) |
 
 `make test` (`tests/run.sh`) boots the image headless, taps through the shell

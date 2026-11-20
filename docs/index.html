@@ -104,9 +104,15 @@
 	</ul>
 
 	<h2>Try it</h2>
-	<p>Build steps are in the <a href="https://github.com/idumych/RenkuMobile#building">README</a>. Once built:</p>
-	<pre><code>make package && scripts/build-image.sh
-DISPLAY_MODE=gtk scripts/qemu.sh start</code></pre>
+	<p>Download the ISO from the <a href="https://github.com/idumych/RenkuMobile/releases/latest">latest release</a>
+	and boot a copy of it as a disk in QEMU:</p>
+	<pre><code>cp RenkuMobile-0.1.0-x86_64.iso phone.img
+qemu-system-x86_64 -enable-kvm -cpu host -smp 2 -m 2048 -rtc base=localtime \
+	-drive file=phone.img,format=raw \
+	-device virtio-vga,xres=720,yres=1440 -device qemu-xhci -device usb-tablet</code></pre>
+	<p>Use the mouse as your finger. Booted as a CD or from a USB stick, choose <strong>Try it out</strong>
+	in Renku's Welcome window first. Building it yourself is described in the
+	<a href="https://github.com/idumych/RenkuMobile#building">README</a>.</p>
 </main>
 
 <footer>
