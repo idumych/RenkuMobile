@@ -1,0 +1,4 @@
+#!/bin/sh
+# Stands in for nasm in configure: neither the host tools nor the cross
+# compiler assemble anything with it, only the full OS build does.
+echo "  elf32 x"; echo "  elf64 x"

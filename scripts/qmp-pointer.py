@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""qmp-pointer.py SOCK tap|down|up|move X Y | drag X1 Y1 X2 Y2 [STEPS]
+
+Absolute pointer (QEMU usb-tablet) for the 720x1440 test phone. Coordinates are
+screen pixels; QMP's absolute axes run 0..32767. "drag" presses, moves in steps
+and releases, like a finger swipe.
+"""
+import json, socket, sys, time
+
+W, H = 720, 1440
+
+def main():
+    sock_path, cmd, *args = sys.argv[1:]
+    s = socket.socket(socket.AF_UNIX)
+    s.connect(sock_path)
+    f = s.makefile("rw")
+    f.readline()
+    def send(obj):
+        f.write(json.dumps(obj) + "\n"); f.flush()
+        while True:
+            r = json.loads(f.readline())
+            if "return" in r or "error" in r:
+                return r
+    send({"execute": "qmp_capabilities"})
+    def move(x, y):
+        send({"execute": "input-send-event", "arguments": {"events": [
+            {"type": "abs", "data": {"axis": "x", "value": int(x * 32767 / (W - 1))}},
+            {"type": "abs", "data": {"axis": "y", "value": int(y * 32767 / (H - 1))}}]}})
+    def btn(down):
+        send({"execute": "input-send-event", "arguments": {"events": [
+            {"type": "btn", "data": {"down": down, "button": "left"}}]}})
+    a = [float(v) for v in args]
+    if cmd == "move":
+        move(a[0], a[1])
+    elif cmd in ("tap", "down", "up"):
+        move(a[0], a[1]); time.sleep(0.05)
+        if cmd in ("tap", "down"):
+            btn(True)
+        if cmd == "tap":
+            time.sleep(0.08)
+        if cmd in ("tap", "up"):
+            btn(False)
+    elif cmd == "drag":
+        x1, y1, x2, y2 = a[:4]
+        steps = int(a[4]) if len(a) > 4 else 20
+        move(x1, y1); time.sleep(0.05); btn(True); time.sleep(0.05)
+        for i in range(1, steps + 1):
+            move(x1 + (x2 - x1) * i / steps, y1 + (y2 - y1) * i / steps)
+            time.sleep(0.015)
+        time.sleep(0.05); btn(False)
+
+main()

@@ -1,0 +1,16 @@
+# Renku Mobile: the phone shell takes the place of Tracker's desktop and the
+# Deskbar. Read with the system's own "user" launch file, whose jobs these
+# amend. (first-login needs Deskbar, so it no longer runs: all it does is add
+# Deskbar replicants.)
+target desktop {
+	service x-vnd.Be-TRAK {
+		disabled
+	}
+	service x-vnd.Be-TSKB {
+		disabled
+	}
+	service x-vnd.Renku-MobileShell {
+		launch /boot/system/apps/MobileShell
+		on initial_volumes_mounted
+	}
+}

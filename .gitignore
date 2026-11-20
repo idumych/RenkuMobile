@@ -1,0 +1,8 @@
+downloads/
+vm/
+shots/
+third_party/
+build/
+out/
+*.hpkg
+.claude/

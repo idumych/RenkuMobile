@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Renku Mobile</title>
+<meta name="description" content="A phone UI for Renku OS, after Plasma Mobile.">
+<style>
+	:root {
+		--bg: #16191b;
+		--surface: #2a2e32;
+		--text: #fcfcfc;
+		--dim: #a1a9b1;
+		--accent: #3daee9;
+	}
+	* { box-sizing: border-box; }
+	body {
+		margin: 0;
+		background: var(--bg);
+		color: var(--text);
+		font: 17px/1.55 "Noto Sans", system-ui, sans-serif;
+	}
+	header, main, footer { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+	header { padding-top: 64px; padding-bottom: 32px; }
+	h1 { font-size: clamp(2.2rem, 6vw, 3.4rem); font-weight: 300; margin: 0; }
+	h2 { font-weight: 400; margin: 56px 0 16px; }
+	.lede { color: var(--dim); font-size: 1.2rem; max-width: 46em; }
+	a { color: var(--accent); }
+	.button {
+		display: inline-block; margin-top: 16px; padding: 10px 20px;
+		background: var(--accent); color: #0b1a24; border-radius: 12px;
+		text-decoration: none; font-weight: 600;
+	}
+	.gallery {
+		display: grid; gap: 28px;
+		grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+	}
+	figure { margin: 0; }
+	figure img {
+		width: 100%; height: auto; display: block;
+		border-radius: 22px; border: 6px solid #000;
+		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+	}
+	figcaption { margin-top: 12px; }
+	figcaption strong { display: block; }
+	figcaption span { color: var(--dim); font-size: 0.95rem; }
+	ul { padding-left: 1.2em; }
+	li { margin: 6px 0; }
+	code { background: var(--surface); padding: 2px 6px; border-radius: 6px; font-size: 0.9em; }
+	pre { background: var(--surface); padding: 16px; border-radius: 12px; overflow-x: auto; }
+	pre code { background: none; padding: 0; }
+	footer { color: var(--dim); padding-top: 48px; padding-bottom: 48px; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<header>
+	<h1>Renku Mobile</h1>
+	<p class="lede">A phone UI for <a href="https://github.com/RenkuOS/Source">Renku OS</a>,
+	after Plasma Mobile. It runs today on x86_64 in QEMU at the original PinePhone's
+	720×1440; the PinePhone itself comes next.</p>
+	<a class="button" href="https://github.com/idumych/RenkuMobile">Source on GitHub</a>
+</header>
+
+<main>
+	<section class="gallery" aria-label="Screenshots">
+		<figure>
+			<img src="screenshots/home.png" width="720" height="1440" alt="Home screen with a large clock, a grid of app icons and a dock over a blue wallpaper">
+			<figcaption><strong>Home</strong><span>Clock, favourite apps and a dock.</span></figcaption>
+		</figure>
+		<figure>
+			<img src="screenshots/app-drawer.png" width="720" height="1440" alt="App drawer listing every app alphabetically in a grid">
+			<figcaption><strong>App drawer</strong><span>Swipe up from home for every app.</span></figcaption>
+		</figure>
+		<figure>
+			<img src="screenshots/action-drawer.png" width="720" height="1440" alt="Action drawer pulled down over the home screen, with Network, Keyboard, Screenshot and Settings tiles">
+			<figcaption><strong>Action drawer</strong><span>Pull down the status bar for quick settings.</span></figcaption>
+		</figure>
+		<figure>
+			<img src="screenshots/terminal-keyboard.png" width="720" height="1440" alt="Terminal filling the screen with the on-screen keyboard below it">
+			<figcaption><strong>Apps and keyboard</strong><span>Every app runs full-screen; the keyboard types into any of them.</span></figcaption>
+		</figure>
+		<figure>
+			<img src="screenshots/task-switcher.png" width="720" height="1440" alt="Task switcher with cards for WebPositive and Terminal">
+			<figcaption><strong>Task switcher</strong><span>Tap a card to switch, ✕ to close.</span></figcaption>
+		</figure>
+		<figure>
+			<img src="screenshots/settings.png" width="720" height="1440" alt="Settings view listing Renku's preference apps">
+			<figcaption><strong>Settings</strong><span>Renku's preferences, one tap from the drawer.</span></figcaption>
+		</figure>
+	</section>
+
+	<h2>How it works</h2>
+	<ul>
+		<li>One app, <code>MobileShell</code>, takes the place of Tracker's desktop and the Deskbar.
+		It's started by Renku's launch daemon and shipped as a regular <code>.hpkg</code>.</li>
+		<li>Renku's app_server has no window-manager hooks, so the shell lists windows through the
+		same private API the Deskbar uses, and makes each one borderless and full-screen through
+		its scripting suite.</li>
+		<li>The on-screen keyboard never takes focus. It types through a small input_server add-on,
+		so every app gets real key presses.</li>
+		<li>QEMU's <code>virtio-vga</code> reports 720×1440, and Renku's virtio GPU driver takes it.</li>
+		<li>The image is the Renku nightly with the package added, written on Linux with Renku's own
+		<code>bfs_shell</code>. No VM clicks needed.</li>
+	</ul>
+
+	<h2>Try it</h2>
+	<p>Build steps are in the <a href="https://github.com/idumych/RenkuMobile#building">README</a>. Once built:</p>
+	<pre><code>make package && scripts/build-image.sh
+DISPLAY_MODE=gtk scripts/qemu.sh start</code></pre>
+</main>
+
+<footer>
+	Renku Mobile is MIT licensed. Renku OS is a fork of Haiku. App icons are Haiku's.
+</footer>
+</body>
+</html>
