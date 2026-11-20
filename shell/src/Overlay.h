@@ -2,9 +2,10 @@
  * Overlay: a full-screen shell window that shows over the apps, such as the
  * action drawer and the task switcher.
  *
- * app_server doesn't composite, so an overlay can't be see-through. Instead it
- * takes a picture of the screen as it opens and draws that, dimmed, behind its
- * own content. Everything is drawn into an off-screen bitmap first so that
+ * On a composited desktop the window is transparent (B_TRANSPARENT_WINDOW) and
+ * the live apps show through the dimming. Without a compositor it takes a
+ * picture of the screen as it opens and draws that, dimmed, behind its own
+ * content. Everything is drawn into an off-screen bitmap first so that
  * dragging and the slide-in don't flicker.
  */
 #ifndef OVERLAY_H

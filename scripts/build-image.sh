@@ -1,8 +1,8 @@
 #!/bin/sh
 # build-image.sh [HPKG] — the Renku Mobile image: the nightly anyboot ISO with
-# the renku_mobile package added and the first-boot prompt skipped, written
-# with bfs_shell, no VM needed. Output: vm/renku-mobile.img (boot it with
-# scripts/qemu.sh start).
+# the renku_mobile package added, the first-boot prompt skipped and the
+# composited desktop on, written with bfs_shell, no VM needed. Output:
+# vm/renku-mobile.img (boot it with scripts/qemu.sh start).
 set -eu
 . "$(dirname "$0")/env.sh"
 HPKG=${1:-$(ls -t "$ROOT"/build/renku_mobile-*-"$ARCH".hpkg | head -1)}
@@ -13,9 +13,15 @@ cp "$ISO" "$IMG"
 # exists on a writable disk; an empty one means the default locale.
 EMPTY=$ROOT/build/empty
 : > "$EMPTY"
+# app_server reads whether to composite when it starts.
+APPEARANCE=$ROOT/build/appearance
+"$ROOT"/scripts/app-server-appearance.py "$APPEARANCE"
 "$BFS_SHELL" --start-offset $BFS_OFFSET "$IMG" <<CMDS
 cp :$HPKG /myfs/system/packages/
 cp :$EMPTY "/myfs/home/config/settings/Locale settings"
+mkdir /myfs/home/config/settings/system
+mkdir /myfs/home/config/settings/system/app_server
+cp :$APPEARANCE /myfs/home/config/settings/system/app_server/appearance
 ls /myfs/home/config/settings
 sync
 quit

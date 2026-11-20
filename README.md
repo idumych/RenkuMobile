@@ -63,8 +63,10 @@ Tracker's desktop and the Deskbar (`packaging/user_launch`). It's packaged as
   through the private API Deskbar uses (`get_window_order`, `get_window_info`,
   `do_window_action`) and resizes windows through their scripting suite (`Look`
   and `Frame` properties).
-- **No compositing,** so the overlays (drawer, task switcher) draw a dimmed
-  screenshot of what's behind them.
+- **Compositing.** The image turns on Renku's composited desktop (the
+  `appearance` settings file, written by `scripts/app-server-appearance.py`),
+  so the overlays (drawer, task switcher) are transparent windows over the
+  live apps. Without a compositor they fall back to a dimmed screenshot.
 - **The image is written on Linux** with Renku's own `bfs_shell`; no VM clicks.
   BFS can't be grown offline, so the image keeps the ISO's 650 MB volume (about
   130 MB free).
