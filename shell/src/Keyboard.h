@@ -22,6 +22,11 @@
  * another word; tapping one of the others swaps it in, and backspace takes
  * the whole word out.
  *
+ * The Corners layout, after Unexpected Keyboard, puts symbols in the corners
+ * of the letter keys, typed by flicking the key towards one, and has no
+ * symbols page; its space bar slides the cursor, and its arrow key is
+ * flicked in the arrow's direction. Swipe typing is off there.
+ *
  * The microphone at the strip's end dictates, as FUTO's voice input does: a
  * circle in place of the keys swells with the voice, and a tap or 2 s of
  * quiet after speech ends it; then what was said goes in (see VoiceInput).
@@ -62,7 +67,8 @@ public:
 
 private:
 	enum Special { kCharacter, kShift, kBackspace, kReturn, kSymbols,
-		kSpace, kLayout, kControl, kAlt, kNamed, kLetters, kCategory };
+		kSpace, kLayout, kControl, kAlt, kNamed, kLetters, kCategory,
+		kArrows };
 
 	struct Key {
 		const char*	label;
@@ -71,6 +77,7 @@ private:
 		BRect		frame;
 		char		byte;		// kNamed: what it types
 		int32		code;		// kNamed: its key code; kCategory: its section
+		const char* const* corners;	// eight, nw to se, or NULL
 	};
 
 			void				_Layout();
@@ -99,6 +106,9 @@ private:
 	static	status_t			_Transcribe(void* data);
 			int32				_KeyAt(BPoint where) const;
 			bool				_IsOn(const Key& key) const;
+			bool				_Corners() const;
+			int32				_CornerAt(const Key& key, BPoint where) const;
+			void				_SendSymbol(const char* symbol);
 
 			std::vector<Key>	fKeys;
 			bool				fShift;
@@ -133,6 +143,10 @@ private:
 			BString				fSwiped;	// the word just swiped, while it
 											// can still be swapped
 			bool				fSpaceBefore;	// before the next word
+
+			int32				fCorner;	// flicked to on the pressed key
+			float				fSlideX;	// where the space bar slide is
+			bool				fSlid;
 
 			BBitmap*			fBuffer;
 			BView*				fBufferView;

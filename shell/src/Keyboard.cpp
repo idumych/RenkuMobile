@@ -36,10 +36,52 @@ static const struct {
 	const char*	name;
 	const char*	description;
 	bool		extras;		// the row of terminal keys
+	bool		corners;	// symbols in the keys' corners
 } kLayouts[] = {
-	{ "English", "US letters", false },
-	{ "Terminal", "US letters, Ctrl, Tab and arrows", true }
+	{ "English", "US letters", false, false },
+	{ "Terminal", "US letters, Ctrl, Tab and arrows", true, false },
+	{ "Corners", "Flick a key to its corner symbols", false, true }
 };
+
+// The Corners layout's symbols on each letter, a to z, in compass order: nw,
+// n, ne, w, e, sw, s, se. Our own placement, after a US keyboard's: the top
+// row's digits top right and their shifted symbols bottom right, the
+// punctuation keys' pairs on the middle row, Esc and Tab where they sit on a
+// PC keyboard.
+static const char* const kCorners[26][8] = {
+	{ "Tab", 0, "=", 0, 0, 0, 0, "+" },		// a
+	{ 0 },									// b
+	{ 0, 0, ",", 0, 0, 0, 0, 0 },			// c
+	{ 0, 0, "[", 0, 0, 0, 0, "{" },			// d
+	{ 0, 0, "3", 0, 0, 0, 0, "#" },			// e
+	{ 0, 0, "]", 0, 0, 0, 0, "}" },			// f
+	{ 0, 0, "\\", 0, 0, 0, 0, "|" },		// g
+	{ 0, 0, ";", 0, 0, 0, 0, ":" },			// h
+	{ 0, 0, "8", 0, 0, 0, 0, "*" },			// i
+	{ 0, 0, "'", 0, 0, 0, 0, "\"" },		// j
+	{ 0, 0, "/", 0, 0, 0, 0, "?" },			// k
+	{ 0, 0, "`", 0, 0, 0, 0, "~" },			// l
+	{ 0 },									// m
+	{ 0 },									// n
+	{ 0, 0, "9", 0, 0, 0, 0, "(" },			// o
+	{ 0, 0, "0", 0, 0, 0, 0, ")" },			// p
+	{ "Esc", 0, "1", 0, 0, 0, 0, "!" },		// q
+	{ 0, 0, "4", 0, 0, 0, 0, "$" },			// r
+	{ 0, 0, "-", 0, 0, 0, 0, "_" },			// s
+	{ 0, 0, "5", 0, 0, 0, 0, "%" },			// t
+	{ 0, 0, "7", 0, 0, 0, 0, "&" },			// u
+	{ 0, 0, ".", 0, 0, 0, 0, 0 },			// v
+	{ 0, 0, "2", 0, 0, 0, 0, "@" },			// w
+	{ 0, 0, ">", 0, 0, 0, 0, 0 },			// x
+	{ 0, 0, "6", 0, 0, 0, 0, "^" },			// y
+	{ 0, 0, "<", 0, 0, 0, 0, 0 },			// z
+};
+static const char* const kArrowCorners[8] = { 0, "\xe2\x86\x91", 0,
+	"\xe2\x86\x90", "\xe2\x86\x92", 0, "\xe2\x86\x93", 0 };
+// A press that moves this far picks a corner; the space bar moves the cursor
+// one character each this far it slides.
+static const float kCornerSlop = 20;
+static const float kSlideStep = 24;
 
 // The globe key's menu, as Plasma's keyboard has it: a row per layout above
 // the key, then Settings below a separator.
@@ -120,6 +162,9 @@ KeyboardView::KeyboardView(BRect frame)
 	fLastDecode(0),
 	fSuggestionPressed(-1),
 	fSpaceBefore(false),
+	fCorner(-1),
+	fSlideX(0),
+	fSlid(false),
 	fBuffer(NULL),
 	fBufferView(NULL),
 	fVoiceAvailable(VoiceInput::Available()),
@@ -236,6 +281,26 @@ KeyboardView::_Render(BView* view, BRect updateRect)
 			key.frame.left + (key.frame.Width() - font.StringWidth(label)) / 2,
 			key.frame.top + (key.frame.Height() + height.ascent
 				- height.descent) / 2));
+
+		if (key.corners == NULL)
+			continue;
+		// the corner symbols, small; the one flicked to stands out
+		font.SetSize(13);
+		view->SetFont(&font);
+		for (int32 c = 0; c < 8; c++) {
+			const char* symbol = key.corners[c];
+			if (symbol == NULL)
+				continue;
+			float width = font.StringWidth(symbol);
+			float x = c == 0 || c == 3 || c == 5 ? key.frame.left + 5
+				: c == 1 || c == 6 ? key.frame.left + (key.frame.Width() - width) / 2
+				: key.frame.right - 5 - width;
+			float y = c < 3 ? key.frame.top + 15 : c < 5
+				? key.frame.top + key.frame.Height() / 2 + 5 : key.frame.bottom - 6;
+			bool chosen = (int32)i == fPressed && c == fCorner;
+			view->SetHighColor(chosen ? Theme::kText : Theme::kTextDim);
+			view->DrawString(symbol, BPoint(x, y));
+		}
 	}
 
 	_DrawTrail(view);
@@ -283,6 +348,9 @@ KeyboardView::MouseDown(BPoint where)
 
 	fPressed = _KeyAt(where);
 	fDownPoint = where;
+	fCorner = -1;
+	fSlideX = where.x;
+	fSlid = false;
 	if (fEmoji && fPressed < 0 && fEmojiPanel.Frame().Contains(where)) {
 		fPanelPressed = true;
 		fDragging = false;
@@ -299,6 +367,28 @@ void
 KeyboardView::MouseMoved(BPoint where, uint32 transit,
 	const BMessage* dragMessage)
 {
+	if (_Corners() && fPressed >= 0) {
+		const Key& key = fKeys[fPressed];
+		if (key.special == kSpace) {
+			// the space bar slides the cursor, a character a step
+			while (fabsf(where.x - fSlideX) >= kSlideStep) {
+				bool right = where.x > fSlideX;
+				char bytes[2] = { (char)(right ? B_RIGHT_ARROW : B_LEFT_ARROW),
+					'\0' };
+				_Send(bytes, right ? 0x63 : 0x61, bytes[0]);
+				fSlideX += right ? kSlideStep : -kSlideStep;
+				fSlid = true;
+			}
+			return;
+		}
+		int32 corner = key.corners != NULL ? _CornerAt(key, where) : -1;
+		if (corner != fCorner) {
+			fCorner = corner;
+			Invalidate(key.frame);
+		}
+		return;
+	}
+
 	if (!fSwiping && fPressed >= 0 && _CanSwipe(fPressed)
 		&& hypotf(where.x - fDownPoint.x, where.y - fDownPoint.y)
 			> kSwipeStart) {
@@ -430,6 +520,20 @@ KeyboardView::MouseUp(BPoint where)
 	int32 pressed = fPressed;
 	fPressed = -1;
 	Invalidate();
+
+	// A flick types the corner it went to, wherever the finger lifts; a
+	// slide of the space bar has moved the cursor already.
+	int32 corner = fCorner;
+	fCorner = -1;
+	if (pressed >= 0 && corner >= 0) {
+		_SendSymbol(fKeys[pressed].corners[corner]);
+		_EndWord();
+		fShift = fControl = fAlt = false;
+		return;
+	}
+	if (pressed >= 0 && fKeys[pressed].special == kSpace && fSlid)
+		return;
+
 	if (pressed < 0 || _KeyAt(where) != pressed)
 		return;
 
@@ -498,6 +602,10 @@ KeyboardView::MouseUp(BPoint where)
 			break;
 		case kCategory:
 			fEmojiPanel.JumpTo(key.code);
+			typed = false;
+			break;
+		case kArrows:
+			// it types only when flicked
 			typed = false;
 			break;
 	}
@@ -589,6 +697,8 @@ KeyboardView::_Layout()
 				characters[row][i][1] = '\0';
 				keys.push_back({ characters[row][i], kCharacter, 1, BRect(), 0,
 					0 });
+				if (_Corners() && !fSymbols)
+					keys.back().corners = kCorners[rows[row][i] - 'a'];
 			}
 			if (row == 2)
 				keys.push_back({ "", kBackspace, 1.5f, BRect(), 0, 0 });
@@ -604,6 +714,16 @@ KeyboardView::_Layout()
 					BRect(), 0, i });
 			}
 			keys.push_back({ "", kBackspace, 1.5f, BRect(), 0, 0 });
+		} else if (_Corners()) {
+			// no symbols page: the symbols are in the corners
+			keys = {
+				{ "Ctrl", kControl, 1.2f, BRect(), 0, 0 },
+				{ "Alt", kAlt, 1, BRect(), 0, 0 },
+				{ "", kLayout, 1, BRect(), 0, 0 },
+				{ kLayouts[fLayout].name, kSpace, 3.6f, BRect(), 0, 0 },
+				{ "", kArrows, 1, BRect(), 0, 0, kArrowCorners },
+				{ "", kReturn, 1.7f, BRect(), 0, 0 }
+			};
 		} else {
 			keys = {
 				{ fSymbols ? "ABC" : "?123", kSymbols, 1.5f, BRect(), 0, 0 },
@@ -734,8 +854,8 @@ KeyboardView::_Backspace(int32 count)
 bool
 KeyboardView::_CanSwipe(int32 key) const
 {
-	return !fSymbols && !fEmoji && fKeys[key].special == kCharacter
-		&& isalpha(fKeys[key].label[0]);
+	return !fSymbols && !fEmoji && !_Corners()
+		&& fKeys[key].special == kCharacter && isalpha(fKeys[key].label[0]);
 }
 
 
@@ -1138,6 +1258,64 @@ KeyboardView::_DrawMenu(BView* view)
 			: kLayouts[row].description, BPoint(frame.left + 14,
 			frame.top + 45));
 	}
+}
+
+
+bool
+KeyboardView::_Corners() const
+{
+	return kLayouts[fLayout].corners && !fEmoji;
+}
+
+
+/*!	The corner of \a key the finger has flicked towards: of those it has, the
+	one nearest the direction, within a quarter turn. -1 for none yet.
+*/
+int32
+KeyboardView::_CornerAt(const Key& key, BPoint where) const
+{
+	float dx = where.x - fDownPoint.x, dy = where.y - fDownPoint.y;
+	if (hypotf(dx, dy) < kCornerSlop)
+		return -1;
+	float angle = atan2f(-dy, dx) * 180 / M_PI;
+	// compass order's directions: nw, n, ne, w, e, sw, s, se
+	static const float kAngles[8] = { 135, 90, 45, 180, 0, 225, 270, 315 };
+	int32 best = -1;
+	float bestOff = 90;
+	for (int32 c = 0; c < 8; c++) {
+		if (key.corners[c] == NULL)
+			continue;
+		float off = fabsf(fmodf(angle - kAngles[c] + 540, 360) - 180);
+		if (off < bestOff) {
+			bestOff = off;
+			best = c;
+		}
+	}
+	return best;
+}
+
+
+/*!	A corner's symbol: Esc, Tab and the arrows as those keys, the rest as
+	the character.
+*/
+void
+KeyboardView::_SendSymbol(const char* symbol)
+{
+	static const struct { const char* name; char byte; int32 code; } kKeys[] = {
+		{ "Esc", B_ESCAPE, 0x01 }, { "Tab", B_TAB, 0x26 },
+		{ "\xe2\x86\x91", B_UP_ARROW, 0x57 },
+		{ "\xe2\x86\x90", B_LEFT_ARROW, 0x61 },
+		{ "\xe2\x86\x92", B_RIGHT_ARROW, 0x63 },
+		{ "\xe2\x86\x93", B_DOWN_ARROW, 0x62 }
+	};
+	for (const auto& key : kKeys) {
+		if (strcmp(symbol, key.name) == 0) {
+			char bytes[2] = { key.byte, '\0' };
+			_Send(bytes, key.code, key.byte);
+			return;
+		}
+	}
+	_Send(symbol, key_code(symbol[0]), symbol[0]);
 }
 
 

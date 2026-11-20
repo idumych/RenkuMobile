@@ -92,7 +92,7 @@ else echo "FAIL a held finger right-clicks (Terminal pastes): the prompt is unch
 # above the letters. Ctrl+C drops the pasted line; Tab completes "cd De".
 $Q tap 174 1330; sleep 1; shot layout-menu
 check layout-menu 300 1250 $SURFACE "the globe key opens the layout menu"
-$Q tap 150 1140; sleep 1; shot terminal-keys
+$Q tap 150 1092; sleep 1; shot terminal-keys
 check terminal-keys 15 1018 $SURFACE "the menu's Terminal adds the terminal keys"
 $Q tap 182 1018; $Q tap 288 1250; sleep 1
 $Q tap 288 1250; $Q tap 218 1170; $Q tap 395 1330; $Q tap 59 1250; $Q tap 218 1170
@@ -102,7 +102,7 @@ changed=$(magick compare -metric AE "$SHOTS/test-before-tab.png" "$SHOTS/test-co
 	-crop 40x14+90+172 null: 2>&1 || true)
 if [ "${changed%% *}" != 0 ]; then echo "ok   Ctrl+C and Tab from the terminal keys"
 else echo "FAIL Ctrl+C and Tab from the terminal keys: nothing was completed"; fail=1; fi
-$Q tap 174 1330; sleep 1; $Q tap 150 1086; sleep 1
+$Q tap 174 1330; sleep 1; $Q tap 150 1031; sleep 1
 
 # The menu's Emoji puts emoji in place of the letters, on the smileys, whose
 # key in the bar under them is tinted; ABC brings the letters back.
@@ -110,6 +110,16 @@ $Q tap 174 1330; sleep 1; $Q tap 150 1195; sleep 1; shot emoji
 check emoji 192 1300 48,91,114 "the menu's Emoji shows the emoji, on the smileys"
 $Q tap 73 1350; sleep 1; shot letters
 check letters 192 1300 $SURFACE "ABC brings the letters back"
+
+# The Corners layout: q flicked towards its top right corner types its 1.
+$Q tap 174 1330; sleep 1; $Q tap 150 1146; sleep 1
+$Q down 40 1090; $Q move 53 1077; $Q move 66 1064; $Q up 66 1064; sleep 1; shot flicked
+changed=$(magick compare -metric AE "$SHOTS/test-letters.png" "$SHOTS/test-flicked.png" \
+	-crop 18x14+101+173 null: 2>&1 || true)
+if [ "${changed%% *}" != 0 ]; then echo "ok   a flick to a key's corner types its symbol"
+else echo "FAIL a flick to a key's corner types its symbol: the prompt is unchanged"; fail=1; fi
+# (the Corners layout's globe key is further right)
+$Q tap 660 1250; sleep 0.5; $Q tap 226 1330; sleep 1; $Q tap 150 1038; sleep 1
 
 # Swipe typing: a finger drawn through h, e, l and o types "hello", and the
 # strip on top suggests it; backspace takes the whole word out again.
