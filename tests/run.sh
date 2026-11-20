@@ -102,6 +102,16 @@ check emoji 192 1300 48,91,114 "the menu's Emoji shows the emoji, on the smileys
 $Q tap 73 1350; sleep 1; shot letters
 check letters 192 1300 $SURFACE "ABC brings the letters back"
 
+# Swipe typing: a finger drawn through h, e, l and o types "hello", and the
+# strip on top suggests it; backspace takes the whole word out again.
+$Q swipe 431 1170 182 1090 645 1170 610 1090; sleep 1; shot swiped
+changed=$(magick compare -metric AE "$SHOTS/test-letters.png" "$SHOTS/test-swiped.png" \
+	-crop 25x14+110+173 null: 2>&1 || true)
+if [ "${changed%% *}" != 0 ]; then echo "ok   a swipe types a word"
+else echo "FAIL a swipe types a word: the prompt is unchanged"; fail=1; fi
+check_not swiped 360 1022 $PANEL "the strip suggests words for the swipe"
+$Q tap 660 1250; sleep 1
+
 # Task switcher shows a card; then close the app from the navigation panel.
 $Q tap 160 1408; sleep 2; shot tasks
 check tasks 100 300 $SURFACE "task switcher shows a card"

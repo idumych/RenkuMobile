@@ -48,7 +48,7 @@ for 720×1440.
 | Action drawer | `shell/src/ActionDrawer.cpp` | Date and time, quick settings (Network, Keyboard, Screenshot, Settings). |
 | Task switcher | `shell/src/TaskSwitcher.cpp` | A card per open window: tap to switch, ✕ to close. |
 | Window management | `shell/src/WindowTracker.cpp` | Makes every app window borderless and full-screen between the panels (and above the keyboard). |
-| On-screen keyboard | `shell/src/Keyboard.cpp`, `vkbd/` | Letters and symbols; types through an input_server add-on, so any app gets the keys. Comes up when a text field gets focus and goes when it loses it, as in Plasma. As in Plasma's keyboard, the globe key opens a menu of the layouts above it, with Settings below them, and the space bar names the layout in use: the Terminal layout adds a row with Esc, Tab, Ctrl, Alt (Haiku's Command key), Home, End and the arrows. Ctrl and Alt hold for the next key, as Shift does. The menu's Emoji puts colour emoji in place of the letters, as Maliit (Plasma Mobile's keyboard) does: a grid scrolled sideways, recently used first, a bar of categories under it, and ABC back to the letters. |
+| On-screen keyboard | `shell/src/Keyboard.cpp`, `vkbd/` | Letters and symbols; types through an input_server add-on, so any app gets the keys. Comes up when a text field gets focus and goes when it loses it, as in Plasma. As in Plasma's keyboard, the globe key opens a menu of the layouts above it, with Settings below them, and the space bar names the layout in use: the Terminal layout adds a row with Esc, Tab, Ctrl, Alt (Haiku's Command key), Home, End and the arrows. Ctrl and Alt hold for the next key, as Shift does. The menu's Emoji puts colour emoji in place of the letters, as Maliit (Plasma Mobile's keyboard) does: a grid scrolled sideways, recently used first, a bar of categories under it, and ABC back to the letters. Swiping across the letters types a word, as in FUTO Keyboard: an accent trail follows the finger, thinning and fading as it ages, the strip on top shows the likeliest words as you go, and on lift the best goes in with a space before it when it follows another word; tapping another swaps it in, backspace takes the whole word out. |
 | Touch | `touch/` | An input_server filter that makes a finger's press land where the finger is, makes taps count as clicks, and right-clicks when a finger is held still (see below). |
 
 The shell is one app, `MobileShell`, started by the launch daemon in place of
@@ -139,13 +139,15 @@ DISPLAY_MODE=gtk scripts/qemu.sh start
 
 | | |
 |---|---|
-| x86_64 in QEMU, 720×1440, on Renku nightly build00094 | the 0.1.0 ISO boots straight to the shell as a disk, and to it after **Try it out** as a CD; `make test` passes on it (status bar, navigation panel, home, action drawer, keyboard, a finger's tap launching an app from the drawer, launching Terminal full-screen with the keyboard coming up, typing into it with the on-screen keyboard, a finger's drag selecting, a ring showing around a held finger and the finger right-clicking to paste, the globe key's layout menu, the Terminal layout's Ctrl+C and Tab, the emoji and back, task switcher, closing an app and the keyboard going with it) |
+| x86_64 in QEMU, 720×1440, on Renku nightly build00094 | the 0.1.0 ISO boots straight to the shell as a disk, and to it after **Try it out** as a CD; `make test` passes on it (status bar, navigation panel, home, action drawer, keyboard, a finger's tap launching an app from the drawer, launching Terminal full-screen with the keyboard coming up, typing into it with the on-screen keyboard, a finger's drag selecting, a ring showing around a held finger and the finger right-clicking to paste, the globe key's layout menu, the Terminal layout's Ctrl+C and Tab, the emoji and back, swiping a word, task switcher, closing an app and the keyboard going with it) |
 | App drawer, scrolling and flicking, Settings view, keyboard following focus in StyledEdit and the task switcher | checked by eye from screenshots, not by `make test` |
 | Android apps (Waydroid) | shelved: needs a Linux-compatible layer in Renku's kernel, plus binder; [Haiku-Linux-Bridge](https://github.com/AiLang-Author/Haiku-Linux-Bridge) (CC0, x86_64 only) could seed the syscall handlers |
 | PinePhone | not started: needs a Renku arm64 image for the A64 (Renku builds a generic arm64 MMC image) |
 
-`make test` (`tests/run.sh`) boots the image headless, taps through the shell
-and checks screen pixels; its screenshots land in `shots/`.
+`make test` first checks the swipe decoder on the host (`tests/swipe-test.cpp`:
+made-up swipes of the 3,000 commonest words), then `tests/run.sh` boots the
+image headless, taps through the shell and checks screen pixels; its
+screenshots land in `shots/`.
 
 Known shortcuts (each marked `shortcut:` in the code):
 
@@ -168,3 +170,18 @@ Known shortcuts (each marked `shortcut:` in the code):
   knows Terminal by its signature.
 - Tapping a text field that already has focus doesn't bring back a keyboard
   you hid: no message says so.
+- Swipe typing knows 10,000 English words, matched by the shape of the path
+  (not FUTO's neural decoder, whose licence doesn't fit). No suggestions
+  while tapping letters, and no next-word prediction.
+
+## Credits
+
+- Swipe typing's words: the Google Books Ngram Corpus's most frequent English
+  words, as cleaned in
+  [orgtre/google-books-ngram-frequency](https://github.com/orgtre/google-books-ngram-frequency),
+  [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)
+  (`scripts/make-word-data.py` makes `shell/src/WordData.h` from it).
+- The swipe trail's widths and timings are AOSP LatinIME's defaults
+  (Apache 2.0), which FUTO Keyboard keeps.
+- Emoji: Unicode's emoji-test.txt (Unicode License), drawn with Google's Noto
+  Color Emoji (SIL Open Font License) from HaikuPorts.

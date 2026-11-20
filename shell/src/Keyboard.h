@@ -14,20 +14,35 @@
  * The menu's Emoji, as in Maliit (Plasma Mobile's keyboard), puts emoji in
  * place of the letters (see EmojiPanel), with a bar of categories under
  * them, a key back to the letters and backspace. It stays until that key.
+ *
+ * Swiping across the letters types a word, as in FUTO Keyboard: a trail in
+ * the accent colour follows the finger, thinning and fading as it ages, and
+ * the strip on top shows the likeliest words as the finger moves, the best in
+ * the middle. On lift the best goes in, a space before it when it follows
+ * another word; tapping one of the others swaps it in, and backspace takes
+ * the whole word out.
  */
 #ifndef KEYBOARD_H
 #define KEYBOARD_H
 
 #include "EmojiPanel.h"
+#include "SwipeDecoder.h"
+
+#include <String.h>
 
 #include <View.h>
 
 #include <vector>
 
 
+class BBitmap;
+class BMessageRunner;
+
+
 class KeyboardView : public BView {
 public:
 								KeyboardView(BRect frame);
+	virtual						~KeyboardView();
 
 	virtual	void				Draw(BRect updateRect);
 	virtual	void				FrameResized(float width, float height);
@@ -35,6 +50,7 @@ public:
 	virtual	void				MouseMoved(BPoint where, uint32 transit,
 									const BMessage* dragMessage);
 	virtual	void				MouseUp(BPoint where);
+	virtual	void				MessageReceived(BMessage* message);
 
 			// When the keyboard goes, its menu goes with it.
 			void				CloseMenu();
@@ -57,8 +73,20 @@ private:
 			BRect				_MenuFrame() const;
 			BRect				_MenuRowFrame(int32 row) const;
 			int32				_MenuRowAt(BPoint where) const;
-			void				_DrawMenu();
+			void				_Render(BView* view, BRect updateRect);
+			void				_DrawMenu(BView* view);
 			void				_Send(const char* bytes, int32 key, char raw);
+			void				_SendText(const char* text);
+			void				_Backspace(int32 count);
+			bool				_CanSwipe(int32 key) const;
+			void				_Decode();
+			void				_CommitSwipe(const BString& word);
+			void				_EndWord();
+			BRect				_SuggestionFrame(int32 slot) const;
+			int32				_SuggestionAt(BPoint where) const;
+			void				_DrawSuggestions(BView* view);
+			void				_DrawTrail(BView* view);
+			BRect				_TrailBounds() const;
 			int32				_KeyAt(BPoint where) const;
 			bool				_IsOn(const Key& key) const;
 
@@ -79,6 +107,25 @@ private:
 			float				fScrollStart;
 			bool				fPanelPressed;	// tracking a finger on the grid
 			bool				fDragging;
+
+			struct TrailPoint {
+				BPoint		where;
+				bigtime_t	when;
+			};
+			SwipeDecoder		fDecoder;
+			BPoint				fDownPoint;
+			bool				fSwiping;
+			std::vector<TrailPoint> fTrail;
+			BMessageRunner*		fTrailRunner;
+			bigtime_t			fLastDecode;
+			std::vector<BString> fSuggestions;	// best first
+			int32				fSuggestionPressed;	// a slot, or -1
+			BString				fSwiped;	// the word just swiped, while it
+											// can still be swapped
+			bool				fSpaceBefore;	// before the next word
+
+			BBitmap*			fBuffer;
+			BView*				fBufferView;
 };
 
 

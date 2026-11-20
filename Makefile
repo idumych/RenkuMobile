@@ -5,7 +5,7 @@
 #   make            build/$(ARCH)/MobileShell, build/$(ARCH)/renku_virtual_keyboard,
 #                   build/$(ARCH)/renku_touch
 #   make package    build/renku_mobile-<version>-$(ARCH).hpkg
-#   make test       host-side self-checks
+#   make test       the swipe decoder on the host, then the shell in QEMU
 
 ROOT := $(abspath .)
 ARCH ?= x86_64
@@ -58,6 +58,10 @@ package: all
 	sh packaging/build-hpkg.sh $(ARCH) $(VERSION)
 
 test:
+	@mkdir -p build/host
+	c++ -O2 -std=c++17 -o build/host/swipe-test tests/swipe-test.cpp \
+		shell/src/SwipeDecoder.cpp
+	build/host/swipe-test
 	sh tests/run.sh
 
 clean:

@@ -19,7 +19,9 @@ namespace Theme {
 // Panels
 const float kStatusBarHeight = 44;
 const float kNavBarHeight = 64;
-const float kKeyboardHeight = 330;
+// with the suggestion strip on top
+const float kKeyboardHeight = 378;
+const float kSuggestionHeight = 48;
 // what the keyboard's row of extra keys adds to it
 const float kKeyboardExtrasHeight = 64;
 

@@ -10,6 +10,9 @@
 #include "../../vkbd/VirtualKeyboard.h"
 
 #include <Application.h>
+#include <Bitmap.h>
+#include <Region.h>
+#include <MessageRunner.h>
 #include <String.h>
 #include <InterfaceDefs.h>
 #include <OS.h>
@@ -56,6 +59,19 @@ static const char* kRecentIcon = "\xe2\x8f\xb1\xef\xb8\x8f";
 // A finger that moves this far across the emoji scrolls them instead.
 static const float kDragSlop = 20;
 
+// Swipe typing. A press on a letter that moves this far is a swipe.
+static const float kSwipeStart = 30;
+// The trail, after AOSP's LatinIME (FUTO's keyboard keeps its values), at
+// two pixels a dp: it thins from head to tail and fades from 100 ms old,
+// gone at 900 ms.
+static const float kTrailStartWidth = 20;
+static const float kTrailEndWidth = 5;
+static const bigtime_t kTrailFadeDelay = 100000;
+static const bigtime_t kTrailFadeDuration = 800000;
+static const bigtime_t kTrailFrame = 20000;
+// How often the strip follows the finger (FUTO: every 33 ms).
+static const bigtime_t kDecodeInterval = 50000;
+
 
 // Haiku key codes for the US layout, so apps that look at "key" (shortcuts)
 // get one.
@@ -90,18 +106,61 @@ KeyboardView::KeyboardView(BRect frame)
 	fPressedEmoji(NULL),
 	fScrollStart(0),
 	fPanelPressed(false),
-	fDragging(false)
+	fDragging(false),
+	fSwiping(false),
+	fTrailRunner(NULL),
+	fLastDecode(0),
+	fSuggestionPressed(-1),
+	fSpaceBefore(false),
+	fBuffer(NULL),
+	fBufferView(NULL)
 {
-	SetViewColor(Theme::kPanel);
+	// Draw() paints the background with the keys: app_server filling it
+	// first would show as a flash under the trail on every frame.
+	SetViewColor(B_TRANSPARENT_COLOR);
 	_Layout();
+}
+
+
+KeyboardView::~KeyboardView()
+{
+	delete fTrailRunner;
+	delete fBuffer;
 }
 
 
 void
 KeyboardView::Draw(BRect updateRect)
 {
+	// Into a buffer first, then onto the screen in one go: drawn straight
+	// there, the keys under the trail showed half drawn on every frame.
+	if (fBuffer == NULL || fBuffer->Bounds() != Bounds()) {
+		delete fBuffer;
+		fBuffer = new BBitmap(Bounds(), B_BITMAP_ACCEPTS_VIEWS, B_RGB32);
+		fBufferView = new BView(Bounds(), "buffer", B_FOLLOW_NONE, 0);
+		fBuffer->AddChild(fBufferView);
+		updateRect = Bounds();
+	}
+	if (!fBuffer->Lock())
+		return;
+	fBufferView->ConstrainClippingRegion(NULL);
+	BRegion clip(updateRect);
+	fBufferView->ConstrainClippingRegion(&clip);
+	_Render(fBufferView, updateRect);
+	fBufferView->Sync();
+	fBuffer->Unlock();
+	DrawBitmap(fBuffer, updateRect, updateRect);
+}
+
+
+void
+KeyboardView::_Render(BView* view, BRect updateRect)
+{
+	view->SetHighColor(Theme::kPanel);
+	view->FillRect(updateRect);
+	_DrawSuggestions(view);
 	if (fEmoji)
-		fEmojiPanel.Draw(this, fPressedEmoji);
+		fEmojiPanel.Draw(view, fPressedEmoji);
 
 	BFont font(be_plain_font);
 	font_height height;
@@ -115,24 +174,24 @@ KeyboardView::Draw(BRect updateRect)
 			fill = mix_color(Theme::kSurface, Theme::kAccent, 90);
 		if ((int32)i == fPressed || (_IsOn(key) && key.special != kShift))
 			fill = Theme::kAccent;
-		SetHighColor(fill);
-		FillRoundRect(key.frame, 8, 8);
+		view->SetHighColor(fill);
+		view->FillRoundRect(key.frame, 8, 8);
 
 		BRect icon(0, 0, 30, 30);
 		icon.OffsetTo(key.frame.left + (key.frame.Width() - 30) / 2,
 			key.frame.top + (key.frame.Height() - 30) / 2);
 		switch (key.special) {
 			case kShift:
-				draw_glyph(this, kGlyphShift, icon, Theme::kText, fShift ? 1 : 0);
+				draw_glyph(view, kGlyphShift, icon, Theme::kText, fShift ? 1 : 0);
 				continue;
 			case kBackspace:
-				draw_glyph(this, kGlyphBackspace, icon, Theme::kText);
+				draw_glyph(view, kGlyphBackspace, icon, Theme::kText);
 				continue;
 			case kReturn:
-				draw_glyph(this, kGlyphReturn, icon, Theme::kText);
+				draw_glyph(view, kGlyphReturn, icon, Theme::kText);
 				continue;
 			case kLayout:
-				draw_glyph(this, kGlyphGlobe, icon, Theme::kText);
+				draw_glyph(view, kGlyphGlobe, icon, Theme::kText);
 				continue;
 			default:
 				break;
@@ -146,18 +205,19 @@ KeyboardView::Draw(BRect updateRect)
 		bool large = key.special == kCharacter || key.special == kCategory
 			|| (key.special == kNamed && (uint8)label[0] >= 0x80);
 		font.SetSize(large ? 26 : 18);
-		SetFont(&font);
+		view->SetFont(&font);
 		font.GetHeight(&height);
-		SetHighColor(key.special == kSpace ? Theme::kTextDim : Theme::kText);
-		SetLowColor(fill);
-		DrawString(label, BPoint(
+		view->SetHighColor(key.special == kSpace ? Theme::kTextDim : Theme::kText);
+		view->SetLowColor(fill);
+		view->DrawString(label, BPoint(
 			key.frame.left + (key.frame.Width() - font.StringWidth(label)) / 2,
 			key.frame.top + (key.frame.Height() + height.ascent
 				- height.descent) / 2));
 	}
 
+	_DrawTrail(view);
 	if (fMenu)
-		_DrawMenu();
+		_DrawMenu(view);
 }
 
 
@@ -178,7 +238,15 @@ KeyboardView::MouseDown(BPoint where)
 		return;
 	}
 
+	if (where.y < kGap + Theme::kSuggestionHeight) {
+		fSuggestionPressed = _SuggestionAt(where);
+		SetMouseEventMask(B_POINTER_EVENTS, B_LOCK_WINDOW_FOCUS);
+		Invalidate();
+		return;
+	}
+
 	fPressed = _KeyAt(where);
+	fDownPoint = where;
 	if (fEmoji && fPressed < 0 && fEmojiPanel.Frame().Contains(where)) {
 		fPanelPressed = true;
 		fDragging = false;
@@ -195,6 +263,30 @@ void
 KeyboardView::MouseMoved(BPoint where, uint32 transit,
 	const BMessage* dragMessage)
 {
+	if (!fSwiping && fPressed >= 0 && _CanSwipe(fPressed)
+		&& hypotf(where.x - fDownPoint.x, where.y - fDownPoint.y)
+			> kSwipeStart) {
+		// The key press becomes a swipe; the trail starts where it did.
+		fSwiping = true;
+		Invalidate(fKeys[fPressed].frame);
+		fPressed = -1;
+		fTrail.clear();
+		fTrail.push_back({ fDownPoint, system_time() });
+		if (fTrailRunner == NULL) {
+			BMessage frame(kMsgAnimate);
+			fTrailRunner = new BMessageRunner(BMessenger(this), &frame,
+				kTrailFrame);
+		}
+	}
+	if (fSwiping) {
+		BRect before = _TrailBounds();
+		fTrail.push_back({ where, system_time() });
+		if (system_time() - fLastDecode > kDecodeInterval)
+			_Decode();
+		Invalidate(before | _TrailBounds());
+		return;
+	}
+
 	if (!fPanelPressed)
 		return;
 
@@ -234,6 +326,34 @@ KeyboardView::MouseUp(BPoint where)
 		return;
 	}
 
+	if (fSuggestionPressed >= 0) {
+		// Swap in the word tapped for the one just swiped.
+		int32 slot = _SuggestionAt(where);
+		int32 index = slot == 1 ? 0 : slot == 0 ? 1 : 2;
+		if (slot == fSuggestionPressed && index < (int32)fSuggestions.size()
+			&& !fSwiped.IsEmpty()) {
+			BString word = fSuggestions[index];
+			if (isupper(fSwiped[0]))
+				word.SetByteAt(0, toupper(word[0]));
+			_Backspace(fSwiped.Length());
+			_SendText(word);
+			fSwiped = word;
+		}
+		fSuggestionPressed = -1;
+		Invalidate();
+		return;
+	}
+
+	if (fSwiping) {
+		fSwiping = false;
+		fTrail.push_back({ where, system_time() });
+		_Decode();
+		if (!fSuggestions.empty())
+			_CommitSwipe(fSuggestions[0]);
+		Invalidate();
+		return;
+	}
+
 	if (fPanelPressed) {
 		// A tap types the emoji and keeps it among the recent ones; a drag
 		// comes to rest on a column.
@@ -263,6 +383,9 @@ KeyboardView::MouseUp(BPoint where)
 		case kCharacter:
 		{
 			char c = fShift ? toupper(key.label[0]) : key.label[0];
+			// a letter after a swiped word starts the next one
+			if (fSpaceBefore && isalpha(c))
+				_SendText(" ");
 			char bytes[2] = { c, '\0' };
 			// Control and a letter type its control character, as a real
 			// keyboard does.
@@ -275,11 +398,9 @@ KeyboardView::MouseUp(BPoint where)
 			_Send(" ", 0x5e, ' ');
 			break;
 		case kBackspace:
-		{
-			char bytes[2] = { B_BACKSPACE, '\0' };
-			_Send(bytes, 0x1e, B_BACKSPACE);
+			// right after a swipe, the whole word goes
+			_Backspace(fSwiped.IsEmpty() ? 1 : fSwiped.Length());
 			break;
-		}
 		case kReturn:
 		{
 			char bytes[2] = { B_RETURN, '\0' };
@@ -324,6 +445,9 @@ KeyboardView::MouseUp(BPoint where)
 			typed = false;
 			break;
 	}
+
+	if (typed)
+		_EndWord();
 
 	// Shift, Control and Alt hold for one key.
 	if (typed && (fShift || fControl || fAlt)) {
@@ -373,12 +497,13 @@ KeyboardView::_Layout()
 
 	BRect bounds = Bounds();
 	float unit = (bounds.Width() - kGap * 11) / 10;
-	float y = kGap;
+	float y = kGap + Theme::kSuggestionHeight;
 	if (fEmoji) {
 		// The emoji take the letters' place, whatever the layout; the bar of
 		// categories takes the bottom row's.
+		float top = y;
 		y = bounds.bottom - kGap - kRowHeight;
-		fEmojiPanel.SetFrame(BRect(kGap, kGap, bounds.right - kGap,
+		fEmojiPanel.SetFrame(BRect(kGap, top, bounds.right - kGap,
 			y - kGap - 1));
 	}
 	for (int32 row = fEmoji ? 3 : extras ? -1 : 0; row < 4; row++) {
@@ -446,6 +571,15 @@ KeyboardView::_Layout()
 		}
 		y += height + kGap;
 	}
+
+	fDecoder.SetKeyWidth(unit);
+	for (const Key& key : fKeys) {
+		if (key.special == kCharacter && isalpha(key.label[0])) {
+			BPoint center((key.frame.left + key.frame.right) / 2,
+				(key.frame.top + key.frame.bottom) / 2);
+			fDecoder.SetKey(key.label[0], { center.x, center.y });
+		}
+	}
 	Invalidate();
 }
 
@@ -469,6 +603,221 @@ KeyboardView::_Send(const char* bytes, int32 code, char raw)
 	key.raw = raw;
 	write_port_etc(port, kVirtualKeyCode, &key, sizeof(key), B_RELATIVE_TIMEOUT,
 		100000);
+}
+
+
+void
+KeyboardView::MessageReceived(BMessage* message)
+{
+	if (message->what != kMsgAnimate) {
+		BView::MessageReceived(message);
+		return;
+	}
+
+	// The trail's next frame: what has faded away goes.
+	BRect before = _TrailBounds();
+	bigtime_t gone = system_time() - kTrailFadeDelay - kTrailFadeDuration;
+	while (!fTrail.empty() && fTrail.front().when < gone)
+		fTrail.erase(fTrail.begin());
+	if (fTrail.empty() && !fSwiping) {
+		delete fTrailRunner;
+		fTrailRunner = NULL;
+	}
+	Invalidate(before);
+}
+
+
+void
+KeyboardView::_SendText(const char* text)
+{
+	for (const char* c = text; *c != '\0'; c++) {
+		char bytes[2] = { *c, '\0' };
+		_Send(bytes, key_code(*c), *c);
+	}
+}
+
+
+void
+KeyboardView::_Backspace(int32 count)
+{
+	char bytes[2] = { B_BACKSPACE, '\0' };
+	for (int32 i = 0; i < count; i++)
+		_Send(bytes, 0x1e, B_BACKSPACE);
+}
+
+
+bool
+KeyboardView::_CanSwipe(int32 key) const
+{
+	return !fSymbols && !fEmoji && fKeys[key].special == kCharacter
+		&& isalpha(fKeys[key].label[0]);
+}
+
+
+void
+KeyboardView::_Decode()
+{
+	std::vector<SwipePoint> path;
+	for (const TrailPoint& point : fTrail)
+		path.push_back({ point.where.x, point.where.y });
+	fSuggestions.clear();
+	for (const char* word : fDecoder.Decode(path, 3))
+		fSuggestions.push_back(word);
+	fLastDecode = system_time();
+	Invalidate(BRect(Bounds().left, 0, Bounds().right,
+		kGap + Theme::kSuggestionHeight));
+}
+
+
+void
+KeyboardView::_CommitSwipe(const BString& swiped)
+{
+	// Shift, and nothing else, holds for a swiped word as for a key.
+	BString word = swiped;
+	if (fShift)
+		word.SetByteAt(0, toupper(word[0]));
+	fShift = fControl = fAlt = false;
+
+	if (fSpaceBefore)
+		_SendText(" ");
+	_SendText(word);
+	fSwiped = word;
+	fSpaceBefore = true;
+}
+
+
+/*!	Anything typed but a swipe ends the swiped word: it can't be swapped or
+	taken out whole any more, and it wants no space after it.
+*/
+void
+KeyboardView::_EndWord()
+{
+	fSwiped = "";
+	fSpaceBefore = false;
+	if (!fSuggestions.empty()) {
+		fSuggestions.clear();
+		Invalidate();
+	}
+}
+
+
+/*!	Three slots across the strip: the best word in the middle. */
+BRect
+KeyboardView::_SuggestionFrame(int32 slot) const
+{
+	BRect bounds = Bounds();
+	float width = (bounds.Width() - kGap * 2) / 3;
+	float left = kGap + slot * width;
+	return BRect(left, kGap / 2, left + width - 1,
+		kGap / 2 + Theme::kSuggestionHeight - 1);
+}
+
+
+int32
+KeyboardView::_SuggestionAt(BPoint where) const
+{
+	for (int32 slot = 0; slot < 3; slot++) {
+		if (_SuggestionFrame(slot).Contains(where))
+			return slot;
+	}
+	return -1;
+}
+
+
+void
+KeyboardView::_DrawSuggestions(BView* view)
+{
+	BFont font(be_plain_font);
+	font.SetSize(20);
+	font_height height;
+	font.GetHeight(&height);
+
+	for (int32 slot = 0; slot < 3; slot++) {
+		BRect frame = _SuggestionFrame(slot);
+		if (slot == fSuggestionPressed) {
+			view->SetHighColor(Theme::kSurface);
+			view->FillRoundRect(frame, 8, 8);
+		}
+		if (slot > 0) {
+			view->SetHighColor(Theme::kDisabled);
+			view->StrokeLine(BPoint(frame.left, frame.top + 12),
+				BPoint(frame.left, frame.bottom - 12));
+		}
+
+		int32 index = slot == 1 ? 0 : slot == 0 ? 1 : 2;
+		if (index >= (int32)fSuggestions.size())
+			continue;
+		BFont face(index == 0 ? be_bold_font : be_plain_font);
+		face.SetSize(20);
+		view->SetFont(&face);
+		view->SetHighColor(index == 0 ? Theme::kText : Theme::kTextDim);
+		view->SetLowColor(slot == fSuggestionPressed ? Theme::kSurface
+			: Theme::kPanel);
+		const char* word = fSuggestions[index].String();
+		view->DrawString(word, BPoint(
+			frame.left + (frame.Width() - face.StringWidth(word)) / 2,
+			frame.top + (frame.Height() + height.ascent - height.descent) / 2));
+	}
+}
+
+
+/*!	The trail as a strip of quads, each as wide and opaque as its start point
+	is young.
+*/
+void
+KeyboardView::_DrawTrail(BView* view)
+{
+	if (fTrail.size() < 2)
+		return;
+
+	bigtime_t now = system_time();
+	auto width = [now](bigtime_t when) {
+		float age = std::min(1.0f, (now - when)
+			/ (float)(kTrailFadeDelay + kTrailFadeDuration));
+		return kTrailStartWidth - (kTrailStartWidth - kTrailEndWidth) * age;
+	};
+	auto alpha = [now](bigtime_t when) {
+		bigtime_t fading = now - when - kTrailFadeDelay;
+		return (uint8)std::clamp(255 - 255 * fading / kTrailFadeDuration,
+			(bigtime_t)0, (bigtime_t)255);
+	};
+
+	view->PushState();
+	view->SetDrawingMode(B_OP_ALPHA);
+	view->SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+	rgb_color color = Theme::kAccent;
+	for (size_t i = 1; i < fTrail.size(); i++) {
+		BPoint a = fTrail[i - 1].where, b = fTrail[i].where;
+		float length = hypotf(b.x - a.x, b.y - a.y);
+		if (length < 0.5f)
+			continue;
+		BPoint normal(-(b.y - a.y) / length, (b.x - a.x) / length);
+		float widthA = width(fTrail[i - 1].when) / 2;
+		float widthB = width(fTrail[i].when) / 2;
+		BPoint quad[] = {
+			BPoint(a.x + normal.x * widthA, a.y + normal.y * widthA),
+			BPoint(b.x + normal.x * widthB, b.y + normal.y * widthB),
+			BPoint(b.x - normal.x * widthB, b.y - normal.y * widthB),
+			BPoint(a.x - normal.x * widthA, a.y - normal.y * widthA) };
+		color.alpha = alpha(fTrail[i - 1].when);
+		view->SetHighColor(color);
+		view->FillPolygon(quad, 4);
+		// round the joint, so a turn leaves no notch; not once it fades,
+		// where the overlap would show as a bead
+		if (color.alpha == 255)
+			view->FillEllipse(b, widthB, widthB);
+	}
+	view->PopState();
+}
+
+
+BRect
+KeyboardView::_TrailBounds() const
+{
+	BRect bounds;
+	for (const TrailPoint& point : fTrail)
+		bounds = bounds | BRect(point.where, point.where);
+	return bounds.InsetByCopy(-kTrailStartWidth, -kTrailStartWidth);
 }
 
 
@@ -530,13 +879,13 @@ KeyboardView::_MenuRowAt(BPoint where) const
 
 
 void
-KeyboardView::_DrawMenu()
+KeyboardView::_DrawMenu(BView* view)
 {
 	BRect menu = _MenuFrame();
-	SetHighColor(Theme::kSurface);
-	FillRoundRect(menu, 10, 10);
-	SetHighColor(Theme::kDisabled);
-	StrokeRoundRect(menu, 10, 10);
+	view->SetHighColor(Theme::kSurface);
+	view->FillRoundRect(menu, 10, 10);
+	view->SetHighColor(Theme::kDisabled);
+	view->StrokeRoundRect(menu, 10, 10);
 
 	// The layout in use is tinted with the accent and outlined, as in
 	// Plasma's; the row under the finger is tinted more.
@@ -549,44 +898,44 @@ KeyboardView::_DrawMenu()
 		BRect frame = _MenuRowFrame(row);
 		bool current = row == fLayout;
 		if (row == fMenuPressed || current) {
-			SetHighColor(row == fMenuPressed ? pressed : tint);
-			FillRoundRect(frame, 6, 6);
+			view->SetHighColor(row == fMenuPressed ? pressed : tint);
+			view->FillRoundRect(frame, 6, 6);
 		}
 		if (current) {
-			SetHighColor(Theme::kAccent);
-			StrokeRoundRect(frame, 6, 6);
+			view->SetHighColor(Theme::kAccent);
+			view->StrokeRoundRect(frame, 6, 6);
 		}
-		SetLowColor(row == fMenuPressed ? pressed : current ? tint
+		view->SetLowColor(row == fMenuPressed ? pressed : current ? tint
 			: Theme::kSurface);
 
 		if (row == kMenuSettingsRow) {
-			SetHighColor(Theme::kDisabled);
+			view->SetHighColor(Theme::kDisabled);
 			float line = frame.top - kMenuSeparator / 2;
-			StrokeLine(BPoint(frame.left + 8, line),
+			view->StrokeLine(BPoint(frame.left + 8, line),
 				BPoint(frame.right - 8, line));
 
 			BRect icon(frame.left + 14, frame.top + (frame.Height() - 26) / 2,
 				frame.left + 40, frame.top + (frame.Height() + 26) / 2);
-			draw_glyph(this, kGlyphGear, icon, Theme::kText);
+			draw_glyph(view, kGlyphGear, icon, Theme::kText);
 			font.SetSize(20);
-			SetFont(&font);
+			view->SetFont(&font);
 			font.GetHeight(&height);
-			SetHighColor(Theme::kText);
-			DrawString("Settings", BPoint(icon.right + 14, frame.top
+			view->SetHighColor(Theme::kText);
+			view->DrawString("Settings", BPoint(icon.right + 14, frame.top
 				+ (frame.Height() + height.ascent - height.descent) / 2));
 			continue;
 		}
 
 		bool emoji = row == kMenuEmojiRow;
 		font.SetSize(22);
-		SetFont(&font);
-		SetHighColor(Theme::kText);
-		DrawString(emoji ? "Emoji" : kLayouts[row].name,
+		view->SetFont(&font);
+		view->SetHighColor(Theme::kText);
+		view->DrawString(emoji ? "Emoji" : kLayouts[row].name,
 			BPoint(frame.left + 14, frame.top + 24));
 		font.SetSize(16);
-		SetFont(&font);
-		SetHighColor(Theme::kTextDim);
-		DrawString(emoji ? "Smileys, animals, food and more"
+		view->SetFont(&font);
+		view->SetHighColor(Theme::kTextDim);
+		view->DrawString(emoji ? "Smileys, animals, food and more"
 			: kLayouts[row].description, BPoint(frame.left + 14,
 			frame.top + 45));
 	}
