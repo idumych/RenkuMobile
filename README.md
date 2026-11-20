@@ -20,16 +20,17 @@ nightly (build00094) with Renku Mobile added, for x86_64 PCs and VMs.
 from a copy, because the disk is written to:
 
 ```sh
-cp RenkuMobile-0.1.0-x86_64.iso phone.img
+cp RenkuMobile-0.2.0-x86_64.iso phone.img
 qemu-system-x86_64 -enable-kvm -cpu host -smp 2 -m 2048 -rtc base=localtime \
 	-drive file=phone.img,format=raw \
 	-device virtio-vga,xres=720,yres=1440 -device qemu-xhci -device usb-tablet
 ```
 
 It boots straight to the home screen. Use the mouse as your finger: tap,
-or press and drag to swipe.
+or press and drag to swipe. For dictation, give it a microphone with
+`-audiodev pa,id=snd0 -device ich9-intel-hda -device hda-micro,audiodev=snd0`.
 
-Booted as a CD (`-cdrom RenkuMobile-0.1.0-x86_64.iso`), or from a USB stick
+Booted as a CD (`-cdrom RenkuMobile-0.2.0-x86_64.iso`), or from a USB stick
 or DVD, Renku's Welcome window comes first because the medium is read-only:
 choose **Try it out** to get to the phone shell. **Install** puts the regular
 Renku on disk, with Renku Mobile in it.
@@ -132,7 +133,7 @@ scripts/make-voice-model.sh
 Then:
 
 ```sh
-make package               # build/renku_mobile-0.1.0-1-x86_64.hpkg
+make package               # build/renku_mobile-0.2.0-1-x86_64.hpkg
 scripts/build-image.sh     # vm/renku-mobile.img (IMG=… for another name: it's a bootable ISO)
 DISPLAY_MODE=gtk scripts/qemu.sh start
 ```
@@ -144,7 +145,7 @@ DISPLAY_MODE=gtk scripts/qemu.sh start
 
 | | |
 |---|---|
-| x86_64 in QEMU, 720×1440, on Renku nightly build00094 | the 0.1.0 ISO boots straight to the shell as a disk, and to it after **Try it out** as a CD; `make test` passes on it (status bar, navigation panel, home, action drawer, keyboard, a finger's tap launching an app from the drawer, launching Terminal full-screen with the keyboard coming up, typing into it with the on-screen keyboard, a finger's drag selecting, a ring showing around a held finger and the finger right-clicking to paste, the globe key's layout menu, the Terminal layout's Ctrl+C and Tab, the emoji and back, swiping a word, dictating whisper.cpp's JFK sample through a virtual microphone, task switcher, closing an app and the keyboard going with it) |
+| x86_64 in QEMU, 720×1440, on Renku nightly build00094 | the 0.2.0 ISO boots straight to the shell as a disk, and to it after **Try it out** as a CD; `make test` passes on it (status bar, navigation panel, home, action drawer, keyboard, a finger's tap launching an app from the drawer, launching Terminal full-screen with the keyboard coming up, typing into it with the on-screen keyboard, a finger's drag selecting, a ring showing around a held finger and the finger right-clicking to paste, the globe key's layout menu, the Terminal layout's Ctrl+C and Tab, the emoji and back, swiping a word, dictating whisper.cpp's JFK sample through a virtual microphone, task switcher, closing an app and the keyboard going with it) |
 | App drawer, scrolling and flicking, Settings view, keyboard following focus in StyledEdit and the task switcher | checked by eye from screenshots, not by `make test` |
 | Android apps (Waydroid) | shelved: needs a Linux-compatible layer in Renku's kernel, plus binder; [Haiku-Linux-Bridge](https://github.com/AiLang-Author/Haiku-Linux-Bridge) (CC0, x86_64 only) could seed the syscall handlers |
 | PinePhone | not started: needs a Renku arm64 image for the A64 (Renku builds a generic arm64 MMC image) |

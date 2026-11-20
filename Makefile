@@ -9,7 +9,7 @@
 
 ROOT := $(abspath .)
 ARCH ?= x86_64
-VERSION := 0.1.0
+VERSION := 0.2.0
 OUT := build/$(ARCH)
 
 HEADERS := $(ROOT)/third_party/renku-src/headers
