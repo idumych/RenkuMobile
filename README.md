@@ -66,9 +66,29 @@ Tracker's desktop and the Deskbar (`packaging/user_launch`). It's packaged as
   `do_window_action`) and resizes windows through their scripting suite (`Look`
   and `Frame` properties).
 - **Compositing.** The image turns on Renku's composited desktop (the
-  `appearance` settings file, written by `scripts/app-server-appearance.py`),
+  `appearance` settings file, written by `scripts/app-server-settings.py`),
   so the overlays (drawer, task switcher) are transparent windows over the
   live apps. Without a compositor they fall back to a dimmed screenshot.
+- **Native apps' size.** Haiku apps scale their controls, spacing, icons and
+  scroll bars with the plain font's size (12 pt being 1x), so the image sets
+  the system and menu fonts to 16 pt (app_server's `fonts` and `appearance`
+  settings, written as it's built), bringing them closer to the shell's size
+  while fixed-size windows such as the Appearance preferences still fit 720
+  pixels. The package alone, installed on an existing Renku, leaves the
+  user's fonts as they are: Appearance's Fonts tab sets them. (Changing them
+  live from the shell as it started froze input, so it's done as files.)
+- **Windows that can't fill the screen,** fixed-size ones (the Appearance
+  preferences) and ones whose app caps their size (DeskCalc), are borderless
+  and centred like the rest. Where Renku's compositor can show a window
+  scaled (`BPrivate::set_window_scale()`, a change sent to Renku), the shell
+  scales them to fit the screen, up to 2x, as Phosh's scale-to-fit does;
+  elsewhere they keep their own size.
+- **Live previews in the task switcher.** Where Renku's compositor can copy a
+  window's contents (`BPrivate::get_window_preview()`, another change sent to
+  Renku), the cards show the windows as they are, refreshed ten times a
+  second while it's open, a playing video included; covered windows too,
+  since each draws into its own buffer. Elsewhere, and for windows never seen,
+  the cards show the app's icon.
 - **Touch screens** go through input_server's tablet add-on, which sends a
   press before the move to where it happened, and app_server takes the
   position of a press from the last move. A mouse hovers there first; a finger
@@ -159,7 +179,7 @@ Known shortcuts (each marked `shortcut:` in the code):
 
 - Favourite apps are a fixed list.
 - No notification list: Renku's notification_server has no API to read them back.
-- Task switcher cards show the app icon and title, not a preview, and don't scroll.
+- Task switcher cards don't scroll; previews need Renku's compositor change.
 - Battery reads the ACPI battery driver; QEMU has none, so it shows a plug.
 - The touch filter works around Renku's tablet add-on, HID driver and
   app_server; all but the long press can go once they take a press's position

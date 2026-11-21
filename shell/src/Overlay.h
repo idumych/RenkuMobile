@@ -34,7 +34,8 @@ public:
 protected:
 	virtual	void				RenderContent(BView* view) = 0;
 
-			// 0 = closed, 1 = fully open; animated by StartAnimation().
+			// 0 = closed, 1 = fully open; animated by StartAnimation(), over
+			// a quarter second, easing out.
 			float				Progress() const { return fProgress; }
 			void				StartAnimation(bool opening);
 	virtual	void				AnimationDone(bool opened);
@@ -48,6 +49,8 @@ private:
 			BMessageRunner*		fAnimation;
 			float				fProgress;
 			bool				fOpening;
+			float				fFrom;		// where the animation started
+			bigtime_t			fStart;
 };
 
 

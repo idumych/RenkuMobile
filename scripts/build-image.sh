@@ -17,16 +17,19 @@ cp "$ISO" "$IMG"
 # exists on a writable disk; an empty one means the default locale.
 EMPTY=$ROOT/build/empty
 : > "$EMPTY"
-# app_server reads whether to composite when it starts.
-APPEARANCE=$ROOT/build/appearance
-"$ROOT"/scripts/app-server-appearance.py "$APPEARANCE"
+# app_server reads whether to composite, and the font sizes native apps
+# scale their controls with, when it starts.
+SETTINGS=$ROOT/build/app_server
+mkdir -p "$SETTINGS"
+"$ROOT"/scripts/app-server-settings.py "$SETTINGS"
 "$BFS_SHELL" --start-offset $BFS_OFFSET "$IMG" <<CMDS
 cp :$HPKG /myfs/system/packages/
 cp :$EMOJI /myfs/system/packages/
 cp :$EMPTY "/myfs/home/config/settings/Locale settings"
 mkdir /myfs/home/config/settings/system
 mkdir /myfs/home/config/settings/system/app_server
-cp :$APPEARANCE /myfs/home/config/settings/system/app_server/appearance
+cp :$SETTINGS/appearance /myfs/home/config/settings/system/app_server/appearance
+cp :$SETTINGS/fonts /myfs/home/config/settings/system/app_server/fonts
 ls /myfs/home/config/settings
 sync
 quit

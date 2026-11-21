@@ -5,7 +5,11 @@
  * window list (the private API Deskbar uses) and, through each window's
  * scripting suite, makes every app window borderless and sizes it to the work
  * area between the status bar and the navigation panel (and the keyboard, when
- * it's up). The task switcher and the navigation buttons work from this list.
+ * it's up). Windows that can't take that size, fixed-size ones or ones whose
+ * app caps their size, keep theirs and are shown scaled to fit, centred,
+ * where Renku's compositor can scale windows (set_window_scale(), as Phosh's
+ * scale-to-fit does); elsewhere they're only centred. The task switcher and
+ * the navigation buttons work from this list.
  */
 #ifndef WINDOW_TRACKER_H
 #define WINDOW_TRACKER_H
@@ -27,6 +31,8 @@ struct TrackedWindow {
 	BMessenger	messenger;	// the BWindow, for scripting
 	BRect		frame;
 	int32		fits;		// how often we've had to resize it
+	bool		capped;		// resizable, but its app won't let it fill the area
+	float		scale;		// as the compositor shows it
 	bool		seen;
 };
 
@@ -51,6 +57,7 @@ public:
 
 private:
 			void				_Fit(TrackedWindow& window, bool force);
+			float				_ScaleFor(const TrackedWindow& window) const;
 			BRect				_TargetFrame(const TrackedWindow& window) const;
 			TrackedWindow*		_Find(int32 token);
 

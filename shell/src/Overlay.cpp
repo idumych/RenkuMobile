@@ -6,6 +6,7 @@
 #include "Theme.h"
 
 #include <Bitmap.h>
+#include <ByteOrder.h>
 #include <InterfaceDefs.h>
 #include <MessageRunner.h>
 #include <Screen.h>
@@ -14,7 +15,7 @@
 #include <string.h>
 
 
-static const float kAnimationStep = 0.25f;
+static const bigtime_t kAnimationDuration = 250000;
 
 
 // app_server only answers this when it starts, so ask once.
@@ -32,7 +33,9 @@ OverlayView::OverlayView(BRect frame, const char* name)
 	fBackdrop(NULL),
 	fAnimation(NULL),
 	fProgress(0),
-	fOpening(false)
+	fOpening(false),
+	fFrom(0),
+	fStart(0)
 {
 	SetViewColor(B_TRANSPARENT_COLOR);
 	fBuffer = new BBitmap(frame.OffsetToCopy(0, 0), B_BITMAP_ACCEPTS_VIEWS,
@@ -65,8 +68,13 @@ OverlayView::MessageReceived(BMessage* message)
 		return;
 	}
 
-	fProgress = std::clamp(fProgress + (fOpening ? kAnimationStep
-		: -kAnimationStep), 0.0f, 1.0f);
+	// By the clock rather than a step a frame, so it takes as long however
+	// often the frames come; easing out (cubic), it slows as it arrives.
+	float t = std::min(1.0f,
+		(float)(system_time() - fStart) / kAnimationDuration);
+	float eased = 1 - (1 - t) * (1 - t) * (1 - t);
+	float target = fOpening ? 1 : 0;
+	fProgress = fFrom + (target - fFrom) * eased;
 	Render();
 	if ((fOpening && fProgress >= 1) || (!fOpening && fProgress <= 0)) {
 		delete fAnimation;
@@ -94,27 +102,36 @@ OverlayView::Render()
 
 	BView* view = fBufferView;
 	BRect bounds = view->Bounds();
-	// On a composited desktop the apps show through wherever the buffer is
-	// clear. Copy fills always draw opaque, so clear the pixels directly.
+	// Dim the screen behind, more as the overlay opens.
+	rgb_color scrim = Theme::kScrim;
+	scrim.alpha = (uint8)(scrim.alpha * fProgress);
 	view->SetDrawingMode(B_OP_COPY);
-	if (composited())
-		memset(fBuffer->Bits(), 0, fBuffer->BitsLength());
-	else if (fBackdrop != NULL)
-		view->DrawBitmap(fBackdrop, ConvertToScreen(bounds), bounds);
-	else {
-		view->SetHighColor(Theme::kPanel);
+	if (composited()) {
+		// The apps show through the buffer, as dimmed as its alpha says.
+		// Written straight in, every frame of an animation: blending the dim
+		// over a cleared buffer gives the same and costs a frame's time.
+		uint32 pixel = B_HOST_TO_LENDIAN_INT32((uint32)scrim.alpha << 24
+			| (uint32)scrim.red << 16 | (uint32)scrim.green << 8 | scrim.blue);
+		uint32* bits = (uint32*)fBuffer->Bits();
+		std::fill(bits, bits + fBuffer->BitsLength() / 4, pixel);
+	} else {
+		if (fBackdrop != NULL)
+			view->DrawBitmap(fBackdrop, ConvertToScreen(bounds), bounds);
+		else {
+			view->SetHighColor(Theme::kPanel);
+			view->FillRect(bounds);
+		}
+		view->SetDrawingMode(B_OP_ALPHA);
+		view->SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+		view->SetHighColor(scrim);
 		view->FillRect(bounds);
 	}
 
-	// Dim the screen behind, more as the overlay opens. Composite blending
-	// keeps the buffer's alpha right for the compositor.
+	// What's drawn over it keeps the buffer's alpha right for the
+	// compositor with composite blending.
 	view->SetDrawingMode(B_OP_ALPHA);
 	view->SetBlendingMode(B_PIXEL_ALPHA,
 		composited() ? B_ALPHA_COMPOSITE : B_ALPHA_OVERLAY);
-	rgb_color scrim = Theme::kScrim;
-	scrim.alpha = (uint8)(scrim.alpha * fProgress);
-	view->SetHighColor(scrim);
-	view->FillRect(bounds);
 
 	RenderContent(view);
 
@@ -128,6 +145,8 @@ void
 OverlayView::StartAnimation(bool opening)
 {
 	fOpening = opening;
+	fFrom = fProgress;
+	fStart = system_time();
 	delete fAnimation;
 	BMessage tick(kMsgAnimate);
 	fAnimation = new BMessageRunner(BMessenger(this), &tick, 16000);
