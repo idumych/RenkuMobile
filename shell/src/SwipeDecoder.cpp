@@ -13,8 +13,12 @@
 static const int kSamples = 32;
 // A word must start and end within this many key widths of the finger.
 static const float kEndSlop = 1.2f;
+// How far a finger cuts corners between keys, in key widths.
+static const float kCornerCut = 0.8f;
+// How much the key the finger passed farthest from counts.
+static const float kMissWeight = 0.5f;
 // How fast the match falls off with distance, in key widths.
-static const float kSigma = 0.35f;
+static const float kSigma = 0.25f;
 // How much a word's commonness counts against its distance.
 static const float kWeightScale = 0.006f;
 
@@ -60,6 +64,39 @@ resample(const std::vector<SwipePoint>& points, int count)
 }
 
 
+/*!	The path a finger takes through \a keys: the straight one with its
+	corners rounded off by a gaussian of \a sigma along it, resampled to
+	\a count points. The ends stay put.
+*/
+static std::vector<SwipePoint>
+finger_path(const std::vector<SwipePoint>& keys, float sigma, int count)
+{
+	const int kDense = 160;
+	std::vector<SwipePoint> dense = resample(keys, kDense);
+	float length = 0;
+	for (size_t i = 1; i < keys.size(); i++)
+		length += distance(keys[i - 1], keys[i]);
+	float step = length / (kDense - 1);
+	if (step == 0)
+		return resample(keys, count);
+
+	int radius = (int)(sigma * 2.5f / step);
+	std::vector<SwipePoint> rounded(kDense);
+	for (int i = 0; i < kDense; i++) {
+		float x = 0, y = 0, total = 0;
+		for (int j = -radius; j <= radius; j++) {
+			SwipePoint point = dense[std::clamp(i + j, 0, kDense - 1)];
+			float weight = expf(-(j * step) * (j * step) / (2 * sigma * sigma));
+			x += point.x * weight;
+			y += point.y * weight;
+			total += weight;
+		}
+		rounded[i] = { x / total, y / total };
+	}
+	return resample(rounded, count);
+}
+
+
 SwipeDecoder::SwipeDecoder()
 	:
 	fKeyWidth(1)
@@ -76,6 +113,7 @@ SwipeDecoder::SetKey(char letter, SwipePoint center)
 		return;
 	fKeys[index] = center;
 	fHasKey[index] = true;
+	fPaths.clear();
 }
 
 
@@ -83,6 +121,7 @@ void
 SwipeDecoder::SetKeyWidth(float width)
 {
 	fKeyWidth = width;
+	fPaths.clear();
 }
 
 
@@ -94,6 +133,8 @@ SwipeDecoder::Decode(const std::vector<SwipePoint>& path, size_t count) const
 		return {};
 	std::vector<SwipePoint> swipe = resample(path, kSamples);
 	float slop = kEndSlop * fKeyWidth;
+	if (fPaths.empty())
+		fPaths.resize(kSwipeWordCount);
 
 	std::vector<SwipePoint> keys;
 	for (int w = 0; w < kSwipeWordCount; w++) {
@@ -120,10 +161,13 @@ SwipeDecoder::Decode(const std::vector<SwipePoint>& path, size_t count) const
 			continue;
 		}
 
-		// How far the word's path lies from the finger's, on average, and
-		// how near the finger came to the key it passed farthest from: a
-		// key never reached counts in full, not shared out among the rest.
-		std::vector<SwipePoint> ideal = resample(keys, kSamples);
+		// How far the word's path, as a finger would swipe it, lies from
+		// the finger's, on average, and how near the finger came to the key
+		// it passed farthest from: a key never reached counts more than its
+		// share of the rest.
+		std::vector<SwipePoint>& ideal = fPaths[w];
+		if (ideal.empty())
+			ideal = finger_path(keys, kCornerCut * fKeyWidth, kSamples);
 		float apart = 0;
 		for (int i = 0; i < kSamples; i++)
 			apart += distance(ideal[i], swipe[i]);
@@ -138,7 +182,7 @@ SwipeDecoder::Decode(const std::vector<SwipePoint>& path, size_t count) const
 		}
 		missed /= fKeyWidth;
 
-		float cost = apart + missed;
+		float cost = apart + kMissWeight * missed;
 		scored.push_back({ -cost * cost / (2 * kSigma * kSigma)
 			+ kWeightScale * kSwipeWords[w].weight, kSwipeWords[w].word });
 	}

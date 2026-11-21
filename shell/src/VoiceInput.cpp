@@ -4,6 +4,9 @@
 #include "VoiceInput.h"
 
 #include <Autolock.h>
+#include <ByteOrder.h>
+#include <Directory.h>
+#include <File.h>
 #include <FindDirectory.h>
 #include <MediaRecorder.h>
 #include <MediaRoster.h>
@@ -37,6 +40,59 @@ model_path()
 		|| path.Append("renku_mobile/ggml-tiny.en-acft-q8_0.bin") != B_OK)
 		return "";
 	return path.Path();
+}
+
+
+/*!	Keeps what was last dictated, as heard (16 kHz mono 16-bit WAV), in
+	~/config/settings/Renku Mobile/last dictation.wav: if the words come out
+	wrong, it tells a poor recording from a mishearing.
+*/
+static void
+save_recording(const std::vector<float>& samples)
+{
+	BPath path;
+	if (find_directory(B_USER_SETTINGS_DIRECTORY, &path, true) != B_OK
+		|| path.Append("Renku Mobile") != B_OK
+		|| create_directory(path.Path(), 0755) != B_OK
+		|| path.Append("last dictation.wav") != B_OK)
+		return;
+	BFile file(path.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
+	if (file.InitCheck() != B_OK)
+		return;
+
+	uint32 dataSize = samples.size() * 2;
+	struct {
+		char	riff[4];
+		uint32	riffSize;
+		char	wave[4];
+		char	fmt[4];
+		uint32	fmtSize;
+		uint16	format;
+		uint16	channels;
+		uint32	rate;
+		uint32	byteRate;
+		uint16	blockAlign;
+		uint16	bits;
+		char	data[4];
+		uint32	dataSize;
+	} _PACKED header = {
+		{ 'R', 'I', 'F', 'F' }, B_HOST_TO_LENDIAN_INT32(36 + dataSize),
+		{ 'W', 'A', 'V', 'E' }, { 'f', 'm', 't', ' ' },
+		B_HOST_TO_LENDIAN_INT32(16), B_HOST_TO_LENDIAN_INT16(1),
+		B_HOST_TO_LENDIAN_INT16(1), B_HOST_TO_LENDIAN_INT32((uint32)kRate),
+		B_HOST_TO_LENDIAN_INT32((uint32)kRate * 2),
+		B_HOST_TO_LENDIAN_INT16(2), B_HOST_TO_LENDIAN_INT16(16),
+		{ 'd', 'a', 't', 'a' }, B_HOST_TO_LENDIAN_INT32(dataSize)
+	};
+	std::vector<int16> pcm(samples.size());
+	for (size_t i = 0; i < samples.size(); i++) {
+		pcm[i] = B_HOST_TO_LENDIAN_INT16((int16)std::clamp(
+			samples[i] * 32767.0f, -32768.0f, 32767.0f));
+	}
+	file.Write(&header, sizeof(header));
+	file.Write(pcm.data(), dataSize);
+	// out to the disk now, in case the device is simply switched off
+	file.Sync();
 }
 
 
@@ -171,6 +227,7 @@ VoiceInput::Transcribe()
 	}
 	if (samples.size() < kChunk)
 		return "";
+	save_recording(samples);
 
 	if (fContext == NULL) {
 		whisper_context_params contextParams

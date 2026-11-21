@@ -398,6 +398,8 @@ KeyboardView::MouseMoved(BPoint where, uint32 transit,
 		fPressed = -1;
 		fTrail.clear();
 		fTrail.push_back({ fDownPoint, system_time() });
+		fSwipePath.clear();
+		fSwipePath.push_back({ fDownPoint.x, fDownPoint.y });
 		if (fTrailRunner == NULL) {
 			BMessage frame(kMsgAnimate);
 			fTrailRunner = new BMessageRunner(BMessenger(this), &frame,
@@ -407,6 +409,7 @@ KeyboardView::MouseMoved(BPoint where, uint32 transit,
 	if (fSwiping) {
 		BRect before = _TrailBounds();
 		fTrail.push_back({ where, system_time() });
+		fSwipePath.push_back({ where.x, where.y });
 		if (system_time() - fLastDecode > kDecodeInterval)
 			_Decode();
 		Invalidate(before | _TrailBounds());
@@ -493,6 +496,7 @@ KeyboardView::MouseUp(BPoint where)
 	if (fSwiping) {
 		fSwiping = false;
 		fTrail.push_back({ where, system_time() });
+		fSwipePath.push_back({ where.x, where.y });
 		_Decode();
 		if (!fSuggestions.empty())
 			_CommitSwipe(fSuggestions[0]);
@@ -862,11 +866,10 @@ KeyboardView::_CanSwipe(int32 key) const
 void
 KeyboardView::_Decode()
 {
-	std::vector<SwipePoint> path;
-	for (const TrailPoint& point : fTrail)
-		path.push_back({ point.where.x, point.where.y });
+	// The trail fades as the finger goes on, so a slow swipe's start is
+	// kept apart from it.
 	fSuggestions.clear();
-	for (const char* word : fDecoder.Decode(path, 3))
+	for (const char* word : fDecoder.Decode(fSwipePath, 3))
 		fSuggestions.push_back(word);
 	fLastDecode = system_time();
 	Invalidate(BRect(Bounds().left, 0, Bounds().right,

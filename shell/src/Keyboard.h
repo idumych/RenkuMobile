@@ -135,7 +135,8 @@ private:
 			SwipeDecoder		fDecoder;
 			BPoint				fDownPoint;
 			bool				fSwiping;
-			std::vector<TrailPoint> fTrail;
+			std::vector<TrailPoint> fTrail;		// what's still drawn
+			std::vector<SwipePoint> fSwipePath;	// the whole swipe
 			BMessageRunner*		fTrailRunner;
 			bigtime_t			fLastDecode;
 			std::vector<BString> fSuggestions;	// best first

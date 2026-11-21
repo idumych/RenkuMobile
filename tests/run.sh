@@ -137,6 +137,16 @@ if [ "${changed%% *}" != 0 ]; then echo "ok   the strip suggests words for the s
 else echo "FAIL the strip suggests words for the swipe: its middle is empty"; fail=1; fi
 $Q tap 660 1250; sleep 1
 
+# A long word swiped slowly, for longer than the trail takes to fade, types
+# what the same swipe does quickly: the decoder sees the swipe's start.
+SOMETHING="146 1170 608 1090 573 1250 182 1090 324 1090 431 1170 537 1090 502 1250 360 1170"
+$Q swipe $SOMETHING; sleep 1; shot swiped-fast; $Q tap 660 1250; sleep 1
+SWIPE_STEP=0.025 $Q swipe $SOMETHING; sleep 1; shot swiped-slow; $Q tap 660 1250; sleep 1
+changed=$(magick compare -metric AE "$SHOTS/test-swiped-fast.png" "$SHOTS/test-swiped-slow.png" \
+	-crop $PROMPT null: 2>&1 || true)
+if [ "${changed%% *}" = 0 ]; then echo "ok   a slow swipe of a long word types what a quick one does"
+else echo "FAIL a slow swipe of a long word types what a quick one does: $changed pixels differ"; fail=1; fi
+
 # Dictation: the microphone opens the listening circle; whisper.cpp's JFK
 # sample played into it is typed at the prompt once the quiet after it ends it.
 if [ -n "$SINK" ]; then

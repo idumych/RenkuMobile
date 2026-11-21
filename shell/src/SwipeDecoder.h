@@ -2,8 +2,8 @@
  * SwipeDecoder: the words a finger's path across the letters could mean.
  *
  * Our own shape matching, not FUTO's (whose decoder is neural, under its own
- * licence): every word's path from key centre to key centre is compared
- * with the finger's, both resampled to the same number of points, and how
+ * licence): every word's path from key centre to key centre, its corners
+ * cut as a finger cuts them, is compared with the finger's, both resampled to the same number of points, and how
  * far apart they lie is weighed against how common the word is. Only words
  * that start and end near where the finger did are tried.
  *
@@ -39,6 +39,8 @@ private:
 			SwipePoint			fKeys[26];
 			bool				fHasKey[26];
 			float				fKeyWidth;
+			// Each word's finger path, worked out when first needed.
+	mutable	std::vector<std::vector<SwipePoint>> fPaths;
 };
 
 

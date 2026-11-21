@@ -11,9 +11,10 @@ and releases, like a finger swipe.
 the finger lands in the same event as the press, without hovering there first,
 a hold stays put (a second by default) before it lets go, a flick moves
 fast and lets go while still moving, and a swipe goes through its points at
-a finger's pace, as when swipe typing.
+a finger's pace, as when swipe typing (SWIPE_STEP seconds a step, 8 steps
+from point to point).
 """
-import json, socket, sys, time
+import json, os, socket, sys, time
 
 W, H = 720, 1440
 
@@ -71,7 +72,7 @@ def main():
         for (x1, y1), (x2, y2) in zip(points, points[1:]):
             for i in range(1, 9):
                 move(x1 + (x2 - x1) * i / 8, y1 + (y2 - y1) * i / 8)
-                time.sleep(0.012)
+                time.sleep(float(os.environ.get("SWIPE_STEP", 0.012)))
         btn(False)
     elif cmd == "flick":
         x1, y1, x2, y2 = a[:4]
