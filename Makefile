@@ -34,6 +34,12 @@ override LDFLAGS += -B$(SYSROOT)/develop/lib -L$(SYSROOT)/develop/lib \
 INPUT_SERVER := $(SYSROOT)/servers/input_server
 endif
 
+# arm64: whisper.cpp's C++ exceptions need the unwinder from libgcc_s, which
+# the arm64 compiler does not link on its own
+ifeq ($(ARCH),arm64)
+override LDFLAGS += -lgcc_s
+endif
+
 # whisper.cpp for the keyboard's dictation (scripts/build-whisper.sh)
 WHISPER := build/whisper-$(ARCH)
 WHISPER_INCLUDES := -I$(ROOT)/third_party/whisper.cpp/include \

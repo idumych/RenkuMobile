@@ -117,11 +117,17 @@ VoiceInput::~VoiceInput()
 /*static*/ bool
 VoiceInput::Available()
 {
+	struct stat st;
+	if (stat(model_path().String(), &st) != 0)
+		return false;
+#if defined(__x86_64__) || defined(__i386__)
 	// shortcut: whisper.cpp is built for AVX2 only; a build of ggml's CPU
 	// variants (GGML_BACKEND_DL) would bring dictation to older x86 CPUs.
-	struct stat st;
-	return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma")
-		&& stat(model_path().String(), &st) == 0;
+	return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
+#else
+	// arm64: ggml's NEON code needs nothing beyond ARMv8
+	return true;
+#endif
 }
 
 
