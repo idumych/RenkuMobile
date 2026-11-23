@@ -3,6 +3,8 @@
  */
 #include "Overlay.h"
 
+#include "Compositor.h"
+
 #include "Theme.h"
 
 #include <Bitmap.h>
@@ -22,8 +24,7 @@ static const bigtime_t kAnimationDuration = 250000;
 static bool
 composited()
 {
-	static const bool sComposited = is_composited_desktop();
-	return sComposited;
+	return renku_composited();
 }
 
 
@@ -170,7 +171,7 @@ OverlayWindow::OverlayWindow(BRect frame, const char* name)
 	BWindow(frame, name, B_NO_BORDER_WINDOW_LOOK, B_FLOATING_ALL_WINDOW_FEEL,
 		B_NOT_MOVABLE | B_NOT_RESIZABLE | B_NOT_ZOOMABLE | B_NOT_MINIMIZABLE
 			| B_NOT_CLOSABLE | B_AVOID_FOCUS | B_ASYNCHRONOUS_CONTROLS
-			| B_TRANSPARENT_WINDOW,
+			| (renku_composited() ? kTransparentWindow : 0),
 		B_ALL_WORKSPACES)
 {
 }

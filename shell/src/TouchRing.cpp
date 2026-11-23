@@ -3,6 +3,8 @@
  */
 #include "TouchRing.h"
 
+#include "Compositor.h"
+
 #include "Theme.h"
 
 #include <Bitmap.h>
@@ -46,7 +48,7 @@ TouchRingWindow::TouchRingWindow()
 		B_NO_BORDER_WINDOW_LOOK, B_FLOATING_ALL_WINDOW_FEEL,
 		B_NOT_MOVABLE | B_NOT_RESIZABLE | B_NOT_ZOOMABLE | B_NOT_MINIMIZABLE
 			| B_NOT_CLOSABLE | B_AVOID_FOCUS | B_ASYNCHRONOUS_CONTROLS
-			| B_TRANSPARENT_WINDOW,
+			| (renku_composited() ? kTransparentWindow : 0),
 		B_ALL_WORKSPACES),
 	fAnimation(NULL),
 	fSince(0),
@@ -96,9 +98,7 @@ TouchRingWindow::MessageReceived(BMessage* message)
 void
 TouchRingWindow::_Begin(BPoint where, bigtime_t since, bigtime_t until)
 {
-	// app_server only answers this when it starts, so ask once.
-	static const bool sComposited = is_composited_desktop();
-	if (!sComposited || until <= since + kDelay)
+	if (!renku_composited() || until <= since + kDelay)
 		return;
 
 	fSince = since;
