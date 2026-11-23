@@ -10,6 +10,15 @@ Page with screenshots: https://idumych.github.io/RenkuMobile/
 |---|---|---|---|---|
 | <img src="docs/screenshots/home.png" width="160" alt="Home screen"> | <img src="docs/screenshots/app-drawer.png" width="160" alt="App drawer"> | <img src="docs/screenshots/action-drawer.png" width="160" alt="Action drawer"> | <img src="docs/screenshots/terminal-keyboard.png" width="160" alt="Terminal with the on-screen keyboard"> | <img src="docs/screenshots/task-switcher.png" width="160" alt="Task switcher"> |
 
+### On a PinePhone
+
+Renku Mobile running on an original PinePhone (Allwinner A64, arm64), on Renku
+with the PinePhone patches:
+
+| Home | Terminal and keyboard | About |
+|---|---|---|
+| <img src="docs/screenshots/pinephone-home.jpg" width="160" alt="Home screen on a PinePhone"> | <img src="docs/screenshots/pinephone-terminal-keyboard.jpg" width="160" alt="Terminal with the on-screen keyboard on a PinePhone"> | <img src="docs/screenshots/pinephone-about.jpg" width="160" alt="About window on a PinePhone, arm64"> |
+
 ## Try it
 
 Download the ISO from the [latest release](https://github.com/idumych/RenkuMobile/releases/latest)
@@ -168,7 +177,7 @@ DISPLAY_MODE=gtk scripts/qemu.sh start
 | x86_64 in QEMU, 720×1440, on Renku nightly build00094 | the 0.2.0 ISO boots straight to the shell as a disk, and to it after **Try it out** as a CD; `make test` passes on it (status bar, navigation panel, home, action drawer, keyboard, a finger's tap launching an app from the drawer, launching Terminal full-screen with the keyboard coming up, typing into it with the on-screen keyboard, a finger's drag selecting, a ring showing around a held finger and the finger right-clicking to paste, the globe key's layout menu, the Terminal layout's Ctrl+C and Tab, a flick to a key's corner, the emoji and back, swiping a word, dictating whisper.cpp's JFK sample through a virtual microphone, task switcher, closing an app and the keyboard going with it) |
 | App drawer, scrolling and flicking, Settings view, keyboard following focus in StyledEdit and the task switcher | checked by eye from screenshots, not by `make test` |
 | Android apps (Waydroid) | shelved: needs a Linux-compatible layer in Renku's kernel, plus binder; [Haiku-Linux-Bridge](https://github.com/AiLang-Author/Haiku-Linux-Bridge) (CC0, x86_64 only) could seed the syscall handlers |
-| PinePhone | not started: needs a Renku arm64 image for the A64 (Renku builds a generic arm64 MMC image) |
+| PinePhone | runs on an original PinePhone (arm64) from the `pinephone-arm64` branch, on Renku with the PinePhone patches ([RenkuOS/Source#575 to #581](https://github.com/RenkuOS/Source/pulls)); the task switcher's live previews and scale to fit wait for Renku's compositor to offer them |
 
 `make test` first checks the swipe decoder on the host (`tests/swipe-test.cpp`:
 made-up swipes of the 3,000 commonest words), then `tests/run.sh` boots the
